@@ -20,8 +20,8 @@ def BLOBS(shape, porosity=0.5, blobiness=1):  #returns im
     fig, ax = plt.subplots(1, 1, figsize=[6, 6])                                    # For static plot
     ax.imshow(ps.visualization.show_3D(im), interpolation='none')
 
-    plt.show()
-    return im
+    # plt.show()
+    # return im
 
 def CYLINDERS(shape, radius=2, ncylinders=0, porosity=0, cyl_length=None):   #returns im, ! Only 3D shapes
     # By controlling the number of cyliders
