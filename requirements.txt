@@ -1,0 +1,5 @@
+porespy
+matplotlib
+numpy
+scipy
+pandas
