@@ -10,95 +10,152 @@ np.random.seed(10)
 
 # YELLOW = TRUE = 1 = VOID/PORE // DARK BLUE = FALSE = 0 = SOLID
 
-
-def CHORD_COUNTS(im):
+def BOND_NUMBER(im, g=9.81, sigma=0.01, delta_rho=1000, voxel_size=0.001, source='lt', method='median'): # returns bn
     # im: binary image from Generators_3D
+    # g: gravitational acceleration, default 9.81 m/s^2
+    # sigma: surface tension, default 0.01 N/m
+    # delta_rho: density difference, default 1000 kg/m^3
+    # voxel_size: used for scaling, 1 (default)
+    # source: how the characteristic size is calculated, default 'lt', options: 'dt' for distance transform, 'lt' for lineal path distribution
+    # method: how the values from 'source'are averaged, default 'median', options: 'mean', 'median', 'min', 'max'
+
+    bn = ps.metrics.bond_number(im=im, g=g, sigma=sigma, delta_rho=delta_rho, voxel_size=voxel_size, source=source, method=method)
+    print ('Bond number is', bn)
+
+    return bn
+
+
+def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25): # returns cc
+    # works both with apply_chords and apply_chords_3D
     # Applies chords and counts their lengths
+    # spacing: space between chords, trim_edges: to remove edges that touch borders
+    # apply_chords3D: if True applies apply_chords_3D, if False applies apply_chords
+    # axis: the axis along which chords are drawn, only used when apply_chords3D is False, options: 0 for x axis, 1 for y axis, 2 for z axis
+    # bins: number of classes for the histogram, 25 (default)
 
-    im_chords = ps.filters.apply_chords(im)
-    chord_length = ps.metrics.chord_counts(im=im_chords)
+    if apply_chords3D:
+        chords = ps.filters.apply_chords_3D(im=im, spacing=spacing, trim_edges=trim_edges)
+        cc = ps.metrics.chord_counts(im=chords)
 
-    length = im.shape[0]
-    fig, ax = plt.subplots(1, 3, figsize=[12, 4])
-    ind = int(length/2)
-    ax[0].imshow((im_chords)[:, :, ind], interpolation='none')
-    ax[0].axis(False)
-    ax[1].hist(chord_length, bins=100)
-    ax[1].set_xlabel('chord length along x axis')
-    ax[1].set_ylabel('frequency')
-    ax[2].plot(np.bincount(chord_length))
-    ax[2].set_xlabel('chord length')
-    ax[2].set_ylabel('the number of chords of each length')
+        fig, ax = plt.subplots(1, figsize=[6, 6])
+        ax.hist(cc, bins=bins)
+        ax.set_xlabel('chord length')
+        ax.set_ylabel('frequency')
+    else:
+        chords = ps.filters.apply_chords(im=im, spacing=spacing, axis=axis, trim_edges=trim_edges, label=True)
+        cc = ps.metrics.chord_counts(im=chords)
+
+        fig, ax = plt.subplots(1, figsize=[6, 6])
+        ax.hist(cc, bins=bins)
+        ax.set_xlabel('chord length along selected axis')
+        ax.set_ylabel('frequency')
 
     plt.show()
-    return chord_length
+    return cc
 
 
-def CHORD_LENGTH_DISTRIBUTION(im, bins=30, log=False, voxel_size=0.001, normalization='length'):
+def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.001, normalization='number', apply_chords3D=True, axis=0):   # returns cld_data
     # im: binary image from Generators_3D
-    # bins: number of classes for the histogram, 10 (default)
+    # bins: number of classes for the histogram, 25 (default)
     # log: logarithmic scale, if True then 'data.L' must be 'data.LogL' in the diagrams
     # voxel_size: used for scaling, 1 (default)
     # normalization: how to normalize bin heights, options: 'count' or 'number' (default), 'length'
+    # axis: the axis along which chords are drawn, only used when apply_chords3D is False, options: 0 for x axis, 1 for y axis, 2 for z axis
 
-    im_chords = ps.filters.apply_chords_3D(im)
-    data = ps.metrics.chord_length_distribution(im=im_chords, bins=bins, log=log, voxel_size=voxel_size, normalization=normalization)
+    if apply_chords3D:
+        im_chords = ps.filters.apply_chords_3D(im=im)
+    else:
+        im_chords = ps.filters.apply_chords(im=im, axis=axis)
+    cld_data = ps.metrics.chord_length_distribution(im=im_chords, bins=bins, log=log, voxel_size=voxel_size, normalization=normalization)
 
     fig, ax = plt.subplots(1, 3, figsize=[12, 4])
-    ax[0].plot(data.L, data.pdf)
+    ax[0].plot(cld_data.L, cld_data.pdf)
     ax[0].set_title("Probability Density Function")
-    ax[1].plot(data.L, data.cdf)
+    ax[1].plot(cld_data.L, cld_data.cdf)
     ax[1].set_title("Cumulative Density Function")
-    ax[2].bar(data.L, data.cdf, data.bin_widths, edgecolor='k')
+    ax[2].bar(cld_data.L, cld_data.cdf, cld_data.bin_widths, edgecolor='k')
     ax[2].set_title('Bar Plot')
 
     plt.show()
-    return data
+    return cld_data
 
 
-def FIND_H(im, srange=[0.01, 0.93]):
+def FIND_H(im, srange=[0.01, 0.93], axis_of_intrusion=0, voxel_size=1, g=0, s=0.5): # returns h
     # im: binary image from Generators_3D
     # srange: saturation range to apply find_h
+    # axis_of_intrusion: the axis along which the intrusion happens, options: 0 for x axis, 1 for y axis, 2 for z axis
+    # voxel_size: used for scaling, 1 (default)
+    # g: gravitational acceleration, 0 (default)
+    # s: global saturation at which to find h, 0.5 (default)
 
     inlets = np.zeros_like(im)
-    inlets[0, :, :] = True
-    inv = ps.simulations.drainage(im=im, inlets=inlets, voxel_size=1, g=0, bins=25)
-    s = ps.metrics.satn_profile(satn=inv.im_satn, s=0.6)
+    if axis_of_intrusion == 0:
+        inlets[0, :, :] = True
+    elif axis_of_intrusion == 1:
+        inlets[:, 0, :] = True
+    elif axis_of_intrusion == 2:
+        inlets[:, :, 0] = True
+    pc = ps.filters.capillary_transform(im=im, voxel_size=voxel_size, g=g)
+    inv = ps.simulations.drainage(im=im, inlets=inlets, pc=pc)
+    s_prof = ps.metrics.satn_profile(satn=inv.im_snwp, s=s)
 
     fig, ax = plt.subplots(1, figsize=[6, 6])
-    ax.plot(s.position, s.saturation, 'b-o')
+    ax.plot(s_prof.position, s_prof.saturation, 'b-o')
     ax.set_xlabel("distance from injection face")
     ax.set_ylabel("non-wetting phase saturation")
-
-    h = ps.metrics.find_h(s.saturation, s.position, srange=srange)
+   
+    h = ps.metrics.find_h(s_prof.saturation, s_prof.position, srange=srange)
     print(h)
 
     plt.show()
     return h
 
 
-def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.01):
+def FIND_POROSITY_THRESHOLD(im, axis=0, conn="max"):   # returns threshold
     # im: binary image from Generators_3D
-    # bins: number of classes for the histogram, 10 (default)
+    # axis: the axis along which the intrusion happens, options: 0 for x axis, 1 for y axis, 2 for z axis
+    # conn:  Options: max (default, when a corner is considered connection between voxels), min (when only face is a connection)
+
+    threshold = ps.metrics.find_porosity_threshold(im=im, axis=axis, conn=conn)
+    print(threshold)
+
+    return threshold
+
+
+def IS_PERCOLATING(im, conn="max"):
+    # im: binary image from Generators_3D
+    # conn:  Options: max (default, when a corner is considered connection between voxels), min (when only face is a connection)
+
+    perc0 = ps.metrics.is_percolating(im=im, conn=conn, axis=0)
+    perc1 = ps.metrics.is_percolating(im=im, conn=conn, axis=1)
+    perc2 = ps.metrics.is_percolating(im=im, conn=conn, axis=2)
+    print('is the image percolating in X axis?', perc0)
+    print('is the image percolating in Y axis?', perc1)
+    print('is the image percolating in Z axis?', perc2)
+
+
+def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1): # returns lpd_data
+    # im: binary image from Generators_3D
+    # bins: number of classes for the histogram, 25 (default)
     # log: logarithmic scale, if True then 'data.L' must be 'data.LogL' in the diagrams
     # voxel_size: used for scaling, 1 (default)
 
     im_lin = ps.filters.distance_transform_lin(im=im, axis=0, mode='forward')
-    data = ps.metrics.lineal_path_distribution(im_lin, bins=bins, log=log, voxel_size=voxel_size)
+    lpd_data = ps.metrics.lineal_path_distribution(im_lin, bins=bins, log=log, voxel_size=voxel_size)
 
     fig, ax = plt.subplots(1, 3, figsize=[10, 4])
-    ax[0].plot(data.L, data.pdf)
+    ax[0].plot(lpd_data.L, lpd_data.pdf)
     ax[0].set_title("Probability Density Function")
-    ax[1].plot(data.L, data.cdf)
+    ax[1].plot(lpd_data.L, lpd_data.cdf)
     ax[1].set_title("Cumulative Density Function")
-    ax[2].bar(data.L, data.cdf, data.bin_widths, edgecolor='k')
+    ax[2].bar(lpd_data.L, lpd_data.cdf, lpd_data.bin_widths, edgecolor='k')
     ax[2].set_title('Bar Plot')
 
     plt.show()
-    return data
+    return lpd_data
 
 
-def MESH_SURFACE_AREA(im, pore_label=None):
+def MESH_SURFACE_AREA(im, pore_label=None): # returns surface_area
     # im: binary image from Generators_3D
     # pore_label: if provided, calculates area of that specific pore region
 
@@ -107,19 +164,18 @@ def MESH_SURFACE_AREA(im, pore_label=None):
     print('surface area of void space is', str(surface_area))
 
     if pore_label is not None:
-        snow = ps.filters.snow_partitioning(im)
+        snow = ps.filters.snow_partitioning(im=im)
         regions = snow.regions / im
         pore_region = regions == pore_label
         mesh = ps.tools.mesh_region(region=pore_region)
-        ps.visualization.show_mesh(mesh)
         area = ps.metrics.mesh_surface_area(mesh=mesh)
-        print('surface area of the meshed pore region ' + str(area))
+        print('surface area of the meshed pore region is', str(area))
         return area
 
     return surface_area
 
 
-def MESH_VOLUME(im, pore_label=None):
+def MESH_VOLUME(im, pore_label=None):   # returns volume
     # im: binary image from Generators_3D
     # pore_label: if provided, calculates volume of that specific pore region
 
@@ -127,7 +183,7 @@ def MESH_VOLUME(im, pore_label=None):
     print('Total volume is =', volume)
 
     if pore_label is not None:
-        snow = ps.filters.snow_partitioning(im)
+        snow = ps.filters.snow_partitioning(im=im)
         regions = snow.regions / im
         pore_region = regions == pore_label
         volume = ps.metrics.mesh_volume(region=pore_region)
@@ -136,166 +192,144 @@ def MESH_VOLUME(im, pore_label=None):
     return volume
 
 
-def PC_CURVE(im, sigma=0.072, theta=180, voxel_size=1e-5):
+def PC_MAP_TO_PC_CURVE(im, sigma=0.01, theta=180, voxel_size=1, steps=25): # returns pc_curve
     # im: binary image from Generators_3D
     # sigma: surface tension of the fluid-fluid system of interest
     # theta: contact angle measured through the invading phase in degrees
+    # voxel_size: used for scaling, 1 (default)
 
-    drainage = ps.filters.porosimetry(im)
-    pc = -2*sigma*np.cos(np.deg2rad(theta))/(drainage*voxel_size)
-    data = ps.metrics.pc_curve(im=im, sizes=drainage, pc=pc, voxel_size=voxel_size)
+    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, voxel_size=voxel_size)
+    drn = ps.simulations.drainage(im=im, pc=pc, steps=steps)
+    pc_curve = ps.metrics.pc_map_to_pc_curve(im=im, pc=drn.im_pc)
 
-    print(data)
+    print(pc_curve)
 
-    fig, ax = plt.subplots(1, 3, figsize=[18, 6])
-    ax[0].plot(data.pc, data.snwp, 'b-o')
+    fig, ax = plt.subplots(1, 3, figsize=[15, 5])
+    ax[0].plot(pc_curve.pc, pc_curve.snwp, 'b-o')
     ax[0].set_title('Plot diagram')
     ax[0].set_xlabel('Capillary Pressure [Pa]')
     ax[0].set_ylabel('Non-wetting Phase Saturation')
-    ax[1].step(data.pc, data.snwp, 'b-o', where='post')
+    ax[1].step(pc_curve.pc, pc_curve.snwp, 'b-o', where='post')
     ax[1].set_title('Step diagram')
     ax[1].set_xlabel('Capillary Pressure [Pa]')
     ax[1].set_ylabel('Non-wetting Phase Saturation')
-    ax[2].semilogx(data.pc, data.snwp, 'r-o')
+    ax[2].semilogx(pc_curve.pc, pc_curve.snwp, 'r-o')
     ax[2].set_title('Logarithmic CP')
     ax[2].set_xlabel('Capillary Pressure [Pa]')
     ax[2].set_ylabel('Non-wetting Phase Saturation')
 
     plt.show()
-    return data
+    return pc_curve
 
 
-def PHASE_FRACTION(im, strel_radius=10):
+def PERCOLATING_POROSITY(im, conn="max"):   # returns eps0, eps1, eps2
     # im: binary image from Generators_3D
-    # strel_radius: radius of structuring element for erosion
-    # normed: if 'False' calculates the number of voxels
+    # conn:  Options: max (default, when a corner is considered connection between voxels), min (when only face is a connection)
 
-    im_close = fftmorphology(im=im, strel=ball(strel_radius), mode='erosion')
-    pad = im*1.0 - im_close*1.0
-    phases = im + pad
+    eps0 = ps.metrics.percolating_porosity(im=im, conn=conn, axis=0)
+    eps1 = ps.metrics.percolating_porosity(im=im, conn=conn, axis=1)
+    eps2 = ps.metrics.percolating_porosity(im=im, conn=conn, axis=2)
+    print('percolating porosity in x-axis is', eps0)
+    print('percolating porosity in y-axis is', eps1)
+    print('percolating porosity in z-axis is', eps2)
 
-    labels = np.unique(phases)
-    print('labels of phases are', labels)
-    phase_fracs = ps.metrics.phase_fraction(phases)
-    print('phase fractions', phase_fracs)
-    phase_voxel_num = ps.metrics.phase_fraction(phases, normed=False)
-    print('phase voxel number', phase_voxel_num)
-
-    length = im.shape[0]
-    fig, ax = plt.subplots(1, 3, figsize=[18, 6])
-    ind = int(length/2)
-    ax[0].imshow((im)[:, :, ind], interpolation='none')
-    ax[0].set_title('Original image')
-    ax[0].axis(False)
-    ax[1].imshow((pad)[:, :, ind], interpolation='none')
-    ax[1].set_title('Pad')
-    ax[1].axis(False)
-    ax[2].imshow((phases)[:, :, ind], interpolation='none')
-    ax[2].set_title('Phases')
-    ax[2].axis(False)
-
-    plt.show()
-    return phase_fracs
+    return eps0, eps1, eps2
 
 
-def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False):
+def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False):   # returns psd_data
     # im: binary image from Generators_3D
-    # bins: number of classes for the histogram, 10 (default)
+    # bins: number of classes for the histogram, 25 (default)
     # voxel_size: used for scaling, 1 (default)
     # log: if False the histogram binning is based on linear(pore radius)
 
-    im_poro = ps.filters.porosimetry(im)
-    data = ps.metrics.pore_size_distribution(im=im_poro, bins=bins, voxel_size=voxel_size, log=log)
+    im_poro = ps.filters.porosimetry(im=im)
+    psd_data = ps.metrics.pore_size_distribution(im=im_poro, bins=bins, voxel_size=voxel_size, log=log)
 
-    length = im.shape[0]
-    fig, ax = plt.subplots(1, 4, figsize=[20, 5])
-    ind = int(length/2)
-    ax[0].imshow((im_poro)[:, :, ind], interpolation='none')
-    ax[0].set_title('Porosimetry image')
-    ax[0].axis(False)
-    ax[1].plot(data.bin_centers, data.pdf)
-    ax[1].set_title("Probability Density Function")
-    ax[2].plot(data.bin_centers, data.cdf)
-    ax[2].set_title("Cumulative Density Function")
-    ax[3].bar(data.bin_centers, data.cdf, data.bin_widths, edgecolor='k')
-    ax[3].set_title('Bar Plot')
-
-    plt.show()
-    return data
-
-
-def POROSITY(im):
-    # im: binary image from Generators_3D
-
-    e = ps.metrics.porosity(im)
-    print(e)
-
-    length = im.shape[0]
-    fig, ax = plt.subplots(1, figsize=[8, 8])
-    ind = int(length/2)
-    ax.imshow(im[ind, ...], interpolation='none')
-    ax.axis(False)
+    fig, ax = plt.subplots(1, 3, figsize=[15, 5])
+    ax[0].plot(psd_data.bin_centers, psd_data.pdf)
+    ax[0].set_title("Probability Density Function")
+    ax[0].set_xlabel('pore radius in voxels')
+    ax[0].set_ylabel('frequency')
+    ax[1].plot(psd_data.bin_centers, psd_data.cdf)
+    ax[1].set_title("Cumulative Density Function")
+    ax[1].set_xlabel('pore radius in voxels')
+    ax[1].set_ylabel('cumulative frequency')
+    ax[2].bar(psd_data.bin_centers, psd_data.cdf, psd_data.bin_widths, edgecolor='k')
+    ax[2].set_title('Bar Plot')
+    ax[2].set_xlabel('pore radius in voxels')
+    ax[2].set_ylabel('cumulative frequency')
 
     plt.show()
-    return e
+    return psd_data
 
 
-def POROSITY_PROFILE(im, voxel_size=5.9):
+def POROSITY(im):   # returns porosity
     # im: binary image from Generators_3D
-    # voxel_size: microns/voxel
 
-    prfx = ps.metrics.porosity_profile(im, axis=0)
-    prfy = ps.metrics.porosity_profile(im, axis=1)
-    prfz = ps.metrics.porosity_profile(im, axis=2)
+    porosity = ps.metrics.porosity(im=im)
+    print('Porosity:', porosity)
 
-    plt.figure(figsize=[8, 6])
-    plt.plot(np.linspace(0, im.shape[0]*voxel_size, im.shape[0]), prfx, 'b-', label='yz-plane', alpha=0.5)
-    plt.plot(np.linspace(0, im.shape[1]*voxel_size, im.shape[1]), prfy, 'r-', label='xz-plane', alpha=0.5)
-    plt.plot(np.linspace(0, im.shape[2]*voxel_size, im.shape[2]), prfz, 'g-', label='xy-plane', alpha=0.5)
-    plt.ylabel('Porosity of slice')
-    plt.xlabel('Position of slice along given axis')
-    plt.legend()
+    return porosity
 
-    plt.figure(figsize=[8, 6])
-    plt.plot(np.linspace(0, 1, im.shape[0]), prfx, 'b-', label='yz-plane', alpha=0.5)
-    plt.plot(np.linspace(0, 1, im.shape[1]), prfy, 'r-', label='xz-plane', alpha=0.5)
-    plt.plot(np.linspace(0, 1, im.shape[2]), prfz, 'g-', label='xy-plane', alpha=0.5)
-    plt.plot([0, 1], [ps.metrics.porosity(im), ps.metrics.porosity(im)], 'r--')
-    plt.ylabel('Porosity of slice')
-    plt.xlabel('Fractional distance along given axis')
-    plt.legend()
+
+def POROSITY_PROFILE(im, voxel_size=1):   # returns prfx, prfy, prfz
+    # im: binary image from Generators_3D
+    # voxel_size: microns/voxel, default 1
+
+    prfx = ps.metrics.porosity_profile(im=im, axis=0)
+    prfy = ps.metrics.porosity_profile(im=im, axis=1)
+    prfz = ps.metrics.porosity_profile(im=im, axis=2)
+
+    fig, ax = plt.subplots(1, figsize=[6, 6])
+    ax.plot(prfx.position * voxel_size, prfx.porosity, 'b-', label='yz-plane', alpha=0.5)
+    ax.plot(prfy.position * voxel_size, prfy.porosity, 'r-', label='xz-plane', alpha=0.5)
+    ax.plot(prfz.position * voxel_size, prfz.porosity, 'g-', label='xy-plane', alpha=0.5)
+    ax.plot([0, 1], [ps.metrics.porosity(im=im), ps.metrics.porosity(im=im)], 'r--')
+    ax.set_ylabel('Porosity of slice')
+    ax.set_xlabel('Position of slice along given axis')
+    ax.legend()
+
+    fig, ax = plt.subplots(1, figsize=[6, 6])
+    ax.plot(prfx.position / prfx.position.max(), prfx.porosity, 'b-', label='yz-plane', alpha=0.5)
+    ax.plot(prfy.position / prfy.position.max(), prfy.porosity, 'r-', label='xz-plane', alpha=0.5)
+    ax.plot(prfz.position / prfz.position.max(), prfz.porosity, 'g-', label='xy-plane', alpha=0.5)
+    ax.plot([0, 1], [ps.metrics.porosity(im=im), ps.metrics.porosity(im=im)], 'r--')
+    ax.set_ylabel('Porosity of slice')
+    ax.set_xlabel('Fractional distance along given axis')
+    ax.legend()
 
     plt.show()
     return prfx, prfy, prfz
 
 
-def RADIAL_DENSITY_DISTRIBUTION(im, bins=50, log=True, voxel_size=0.1):
+def RADIAL_DENSITY_DISTRIBUTION(im, bins=25, log=False, voxel_size=1):  # returns rdd_data
     # im: binary image from Generators_3D
-    # bins: number of classes for the histogram, 10 (default)
+    # bins: number of classes for the histogram, 25 (default)
     # log: if True the histogram binning is based on log(size)
     # voxel_size: used for scaling, 1 (default)
 
     dt = edt(im)
-    data = ps.metrics.radial_density_distribution(dt=dt, bins=bins, log=log, voxel_size=voxel_size)
+    rdd_data = ps.metrics.radial_density_distribution(dt=dt, bins=bins, log=log, voxel_size=voxel_size)
 
     fig, ax = plt.subplots(1, 3, figsize=[12, 4])
-    ax[0].plot(data.bin_centers, data.pdf)
+    ax[0].plot(rdd_data.bin_centers, rdd_data.pdf)
     ax[0].set_title("Probability Density Function")
-    ax[1].plot(data.bin_centers, data.cdf)
+    ax[1].plot(rdd_data.bin_centers, rdd_data.cdf)
     ax[1].set_title("Cumulative Density Function")
-    ax[2].bar(data.bin_centers, data.cdf, data.bin_widths, edgecolor='k')
+    ax[2].bar(rdd_data.bin_centers, rdd_data.cdf, rdd_data.bin_widths, edgecolor='k')
     ax[2].set_title('Bar Plot')
 
     plt.show()
-    return data
+    return rdd_data
 
 
-def REGION_SURFACE_AREAS(im, voxel_size=0.1, strel_size=2):
+def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0):   # returns surface_areas
     # im: binary image from Generators_3D
     # voxel_size: used for scaling, 1 (default)
     # strel: structuring element used to blur the region, bigger size means region will become increasingly blurred and inaccurate
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
 
-    snow = ps.filters.snow_partitioning(im)
+    snow = ps.filters.snow_partitioning(im=im)
     regions = snow.regions
     surface_areas = ps.metrics.region_surface_areas(regions=regions, voxel_size=voxel_size, strel=ball(strel_size))
 
@@ -305,68 +339,107 @@ def REGION_SURFACE_AREAS(im, voxel_size=0.1, strel_size=2):
         mask = np.array(np.where(regions_sur == i, regions_sur, 0), dtype=bool)
         regions_sur[mask] = surface_areas[i]
 
-    length = im.shape[0]
-    fig, ax = plt.subplots(1, 3, figsize=[12, 4])
-    ind = int(length/2)
-    ax[0].imshow((regions/im)[:, :, ind], interpolation='none')
-    rgs = ax[1].imshow((regions_sur)[:, :, ind], interpolation='none')
-    fig.colorbar(rgs, ax=ax[1], shrink=0.8)
-    ax[1].axis(False)
-    ax[2].hist(surface_areas, edgecolor='k')
-    ax[2].set_title("PDF")
+    fig, ax = plt.subplots(1, 2, figsize=[12, 5])
+    ind = int(im.shape[slice]/2)
+    if slice == 0:
+        im_plot = ax[0].imshow((regions_sur)[ind, :, :], interpolation='none')
+        ax[0].set_title('YZ slice - Surface area of regions')
+    elif slice == 1:
+        im_plot = ax[0].imshow((regions_sur)[:, ind, :], interpolation='none')
+        ax[0].set_title('XZ slice - Surface area of regions')
+    else:
+        im_plot = ax[0].imshow((regions_sur)[:, :, ind], interpolation='none')
+        ax[0].set_title('XY slice - Surface area of regions')
+    fig.colorbar(im_plot, ax=ax[0], shrink=0.8)
+    ax[0].axis(False)
+
+    ax[1].hist(surface_areas, edgecolor='k')
+    ax[1].set_title("Probability Density Function")
 
     plt.show()
     return surface_areas
 
 
-def REGION_VOLUMES(im, mode='voxel'):
+def REGION_VOLUMES(im, method='voxel', slice=0):    # returns r_volumes
     # im: binary image from Generators_3D
-    # mode: function that calculates the volume of each region, options: 'marching_cubes' (DEF) & 'voxel'
+    # method: how the volume of each region is calculated, options: 'marching_cubes' (DEF) & 'voxel'
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
 
-    snow = ps.filters.snow_partitioning(im)
+    snow = ps.filters.snow_partitioning(im=im)
     regions = snow.regions
-    vols = ps.metrics.region_volumes(regions=regions, mode=mode)
+    r_volumes = ps.metrics.region_volumes(regions=regions, method=method)
 
     regions_vol = np.copy(regions)
-    for i in range(0, len(vols)):
+    for i in range(0, len(r_volumes)):
         mask = np.array(np.where(regions_vol == i, regions_vol, 0), dtype=bool)
-        regions_vol[mask] = vols[i]
+        regions_vol[mask] = r_volumes[i]
 
-    length = im.shape[0]
-    fig, ax = plt.subplots(1, 2, figsize=[10, 4])
-    ind = int(length/2)
-    ax[0].imshow((regions/im)[:, :, ind], interpolation='none')
-    rgs = ax[1].imshow((regions_vol)[:, :, ind], interpolation='none')
-    fig.colorbar(rgs, ax=ax[1], shrink=0.8)
-    ax[1].axis(False)
+    fig, ax = plt.subplots(1, 2, figsize=[12, 5])
+    ind = int(im.shape[slice]/2)
+    if slice == 0:
+        rgs = ax[0].imshow((regions_vol)[ind, :, :], interpolation='none')
+        ax[0].set_title('YZ slice - Volume of regions')
+    elif slice == 1:
+        rgs = ax[0].imshow((regions_vol)[:, ind, :], interpolation='none')
+        ax[0].set_title('XZ slice - Volume of regions')
+    else:
+        rgs = ax[0].imshow((regions_vol)[:, :, ind], interpolation='none')
+        ax[0].set_title('XY slice - Volume of regions')
+    fig.colorbar(rgs, ax=ax[0], shrink=0.8)
+    ax[0].axis(False)
+
+    ax[1].hist(r_volumes, edgecolor='k')
+    ax[1].set_title("Probability Density Function")
 
     plt.show()
-    return vols
+    return r_volumes
 
 
-def SATN_PROFILE(im, s_value=0.6, span=13, mode='slide', axis=1):
+def REV_POROSITY(im, n=1000):  # returns rev_porosity
     # im: binary image from Generators_3D
-    # s_value (ps.metrics.satn_profile): global saturation
-    # span: width of slice over which the saturation is computed, default 10 voxels
+    # n: number of randomly located sized boxes, default 1000
+
+    rev_porosity = ps.metrics.rev_porosity(im=im)
+
+    fig, ax = plt.subplots(1, 1, figsize=[6, 6])
+    ax.plot(rev_porosity.volume, rev_porosity.porosity, "r.")
+    ax.set_xlabel("volume")
+    ax.set_ylabel("porosity")
+
+    plt.show()
+    return rev_porosity
+
+
+def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  # returns sp_list
+    # im: binary image from Generators_3D
+    # span: width of slice over which the saturation is computed, default 2 voxels
     # mode: How averaging window moves, options: by sliding ('slide') or by tiling ('tile')
+    # axis: the axis along which the intrusion happens, options: 0 for x axis, 1 for y axis, 2 for z axis
+    # sigma: surface tension of the fluid-fluid system of interest
+    # theta: contact angle measured through the invading phase in degrees
+    # g: gravitational acceleration, 0 (default)
 
     inlets = np.zeros_like(im)
-    inlets[0, :, :] = True
-    inv = ps.simulations.drainage(im=im, inlets=inlets, voxel_size=1, g=0)
-    s = ps.metrics.satn_profile(satn=inv.im_satn, s=s_value, span=span, mode=mode, axis=axis)
+    if axis == 0:
+        inlets[0, :, :] = True
+    elif axis == 1:
+        inlets[:, 0, :] = True
+    else:
+        inlets[:, :, 0] = True
+    
+    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g)
+    inv = ps.simulations.drainage(im=im, pc=pc, inlets=inlets)
 
-    length = im.shape[0]
-    fig, ax = plt.subplots(1, 3, figsize=[18, 6])
-    ind = int(length/2)
-    ax[0].imshow((inv.im_satn/im)[:, :, ind], interpolation='none')
-    ax[0].axis(False)
-    ax[0].set_title('Saturation map')
-    ax[1].imshow(((inv.im_satn < s_value)*(inv.im_satn > 0)/im)[:, :, ind], interpolation='none')
-    ax[1].axis(False)
-    ax[1].set_title(f'Fluid distribution at saturation = {s_value}')
-    ax[2].plot(s.position, s.saturation, 'b-o')
-    ax[2].set_xlabel("distance from injection face")
-    ax[2].set_ylabel("non-wetting phase saturation")
+    fig, ax = plt.subplots(1, figsize=[6, 6])
+    s_values = np.arange(0.1, 1.0, 0.2)
+    sp_list = []
+    for s_value in s_values:
+        sp = ps.metrics.satn_profile(satn=inv.im_snwp, s=s_value, span=span, mode=mode, axis=axis)
+        sp_list.append(sp)
+        ax.plot(sp.position, sp.saturation, '-o', label=f's={s_value:.1f}')
+    ax.set_xlabel("distance from injection face")
+    ax.set_ylabel("non-wetting phase saturation")
+    ax.legend()
 
     plt.show()
-    return s
+    return sp_list

@@ -23,6 +23,7 @@ def BLOBS(shape, porosity=0.5, blobiness=1):  #returns im
     plt.show()
     return im
 
+
 def CYLINDERS(shape, radius=2, ncylinders=0, porosity=0, cyl_length=None):   #returns im, ! Only 3D shapes
     # By controlling the number of cyliders
     # ncylinders: number of cyl
@@ -53,6 +54,7 @@ def CYLINDERS(shape, radius=2, ncylinders=0, porosity=0, cyl_length=None):   #re
     plt.show()
     return faces
 
+
 def OVERLAPPING_SPHERES(shape, radius, porosity, maxiter=10):  #returns im
     # r: controls size of spheres, maxiter: number of of iterations used to match the desired porosity default=10
 
@@ -64,6 +66,7 @@ def OVERLAPPING_SPHERES(shape, radius, porosity, maxiter=10):  #returns im
 
     plt.show()
     return im
+
 
 def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3):  #returns im
     # dist: statistical distribution of spheres diameters
@@ -78,6 +81,7 @@ def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3):  #returns im
 
     plt.show()
     return im
+
 
 def PSEUDO_GRAVITY_PACKING(im, radius, maxiter, clearance=0, pk_axis=0):  #returns packing
     # im: can also be a list
@@ -97,6 +101,7 @@ def PSEUDO_GRAVITY_PACKING(im, radius, maxiter, clearance=0, pk_axis=0):  #retur
         ax.axis(False)
     plt.show()
     return packing
+
 
 def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True):
     # ncells: number of cells # flat_faces = false : for edges to be true, r: thickness of edge (default=1)
