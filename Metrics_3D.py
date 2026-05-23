@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import porespy as ps
 import scipy.ndimage as spim
 from porespy.filters import fftmorphology
@@ -26,7 +27,7 @@ def BOND_NUMBER(im, g=9.81, sigma=0.01, delta_rho=1000, voxel_size=0.001, source
     return bn
 
 
-def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25): # returns cc
+def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25, save_excel=False): # returns cc    XLSX
     # works both with apply_chords and apply_chords_3D
     # Applies chords and counts their lengths
     # spacing: space between chords, trim_edges: to remove edges that touch borders
@@ -52,10 +53,15 @@ def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bi
         ax.set_ylabel('frequency')
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'chord_length': cc}).to_excel('chord_counts.xlsx', index=False)
+        print("Table saved to chord_counts.xlsx")
+
     return cc
 
 
-def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.001, normalization='number', apply_chords3D=True, axis=0):   # returns cld_data
+def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.001, normalization='number', apply_chords3D=True, axis=0, save_excel=False):   # returns cld_data  XLSX
     # im: binary image from Generators_3D
     # bins: number of classes for the histogram, 25 (default)
     # log: logarithmic scale, if True then 'data.L' must be 'data.LogL' in the diagrams
@@ -78,6 +84,11 @@ def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.001, normaliz
     ax[2].set_title('Bar Plot')
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'L': cld_data.L, 'pdf': cld_data.pdf, 'cdf': cld_data.cdf, 'bin_widths': cld_data.bin_widths}).to_excel('chord_length_distribution.xlsx', index=False)
+        print("Table saved to chord_length_distribution.xlsx")
+
     return cld_data
 
 
@@ -135,7 +146,7 @@ def IS_PERCOLATING(im, conn="max"):
     print('is the image percolating in Z axis?', perc2)
 
 
-def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1): # returns lpd_data
+def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel=False): # returns lpd_data  XLSX
     # im: binary image from Generators_3D
     # bins: number of classes for the histogram, 25 (default)
     # log: logarithmic scale, if True then 'data.L' must be 'data.LogL' in the diagrams
@@ -153,6 +164,11 @@ def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1): # returns lp
     ax[2].set_title('Bar Plot')
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'L': lpd_data.L, 'pdf': lpd_data.pdf, 'cdf': lpd_data.cdf, 'bin_widths': lpd_data.bin_widths}).to_excel('lineal_path_distribution.xlsx', index=False)
+        print("Table saved to lineal_path_distribution.xlsx")
+
     return lpd_data
 
 
@@ -193,7 +209,7 @@ def MESH_VOLUME(im, pore_label=None):   # returns volume
     return volume
 
 
-def PC_MAP_TO_PC_CURVE(im, sigma=0.01, theta=180, voxel_size=1, steps=25): # returns pc_curve
+def PC_MAP_TO_PC_CURVE(im, sigma=0.01, theta=180, voxel_size=1, steps=25, save_excel=False): # returns pc_curve   XLSX
     # im: binary image from Generators_3D
     # sigma: surface tension of the fluid-fluid system of interest
     # theta: contact angle measured through the invading phase in degrees
@@ -220,6 +236,11 @@ def PC_MAP_TO_PC_CURVE(im, sigma=0.01, theta=180, voxel_size=1, steps=25): # ret
     ax[2].set_ylabel('Non-wetting Phase Saturation')
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'pc': pc_curve.pc, 'snwp': pc_curve.snwp}).to_excel('pc_map_to_pc_curve.xlsx', index=False)
+        print("Table saved to pc_map_to_pc_curve.xlsx")
+
     return pc_curve
 
 
@@ -237,7 +258,7 @@ def PERCOLATING_POROSITY(im, conn="max"):   # returns eps0, eps1, eps2
     return eps0, eps1, eps2
 
 
-def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False):   # returns psd_data
+def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False, save_excel=False):   # returns psd_data  XLSX
     # im: binary image from Generators_3D
     # bins: number of classes for the histogram, 25 (default)
     # voxel_size: used for scaling, 1 (default)
@@ -261,6 +282,11 @@ def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False):   # returns ps
     ax[2].set_ylabel('cumulative frequency')
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'bin_centers': psd_data.bin_centers, 'pdf': psd_data.pdf, 'cdf': psd_data.cdf, 'bin_widths': psd_data.bin_widths}).to_excel('pore_size_distribution.xlsx', index=False)
+        print("Table saved to pore_size_distribution.xlsx")
+
     return psd_data
 
 
@@ -303,7 +329,7 @@ def POROSITY_PROFILE(im, voxel_size=1):   # returns prfx, prfy, prfz
     return prfx, prfy, prfz
 
 
-def RADIAL_DENSITY_DISTRIBUTION(im, bins=25, log=False, voxel_size=1):  # returns rdd_data
+def RADIAL_DENSITY_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel=False):  # returns rdd_data  XLSX
     # im: binary image from Generators_3D
     # bins: number of classes for the histogram, 25 (default)
     # log: if True the histogram binning is based on log(size)
@@ -321,10 +347,15 @@ def RADIAL_DENSITY_DISTRIBUTION(im, bins=25, log=False, voxel_size=1):  # return
     ax[2].set_title('Bar Plot')
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'bin_centers': rdd_data.bin_centers, 'pdf': rdd_data.pdf, 'cdf': rdd_data.cdf, 'bin_widths': rdd_data.bin_widths}).to_excel('radial_density_distribution.xlsx', index=False)
+        print("Table saved to radial_density_distribution.xlsx")
+
     return rdd_data
 
 
-def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0):   # returns surface_areas
+def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0, save_excel=False):   # returns surface_areas  XLSX
     # im: binary image from Generators_3D
     # voxel_size: used for scaling, 1 (default)
     # strel: structuring element used to blur the region, bigger size means region will become increasingly blurred and inaccurate
@@ -358,10 +389,15 @@ def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0):   # returns s
     ax[1].set_title("Probability Density Function")
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'region': range(1, len(surface_areas) + 1), 'surface_area': surface_areas}).to_excel('region_surface_areas.xlsx', index=False)
+        print("Table saved to region_surface_areas.xlsx")
+
     return surface_areas
 
 
-def REGION_VOLUMES(im, method='voxel', slice=0):    # returns r_volumes
+def REGION_VOLUMES(im, method='voxel', slice=0, save_excel=False):    # returns r_volumes XLSX
     # im: binary image from Generators_3D
     # method: how the volume of each region is calculated, options: 'marching_cubes' (DEF) & 'voxel'
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
@@ -393,6 +429,11 @@ def REGION_VOLUMES(im, method='voxel', slice=0):    # returns r_volumes
     ax[1].set_title("Probability Density Function")
 
     plt.show()
+
+    if save_excel:
+        pd.DataFrame({'region': range(1, len(r_volumes) + 1), 'volume': r_volumes}).to_excel('region_volumes.xlsx', index=False)
+        print("Table saved to region_volumes.xlsx")
+
     return r_volumes
 
 
@@ -474,4 +515,4 @@ def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  
 length = 100
 np.random.seed(7)
 im = ~ps.generators.overlapping_spheres([length, length], r=10, porosity=0.6)
-# REGIONPROPS_3D(im)
+REGIONPROPS_3D(im)
