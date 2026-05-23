@@ -4,6 +4,7 @@ import porespy as ps
 from porespy.filters import fftmorphology
 from skimage.morphology import ball
 from edt import edt
+from sympy import im
 
 ps.visualization.set_mpl_style()
 np.random.seed(10)
@@ -335,9 +336,9 @@ def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0):   # returns s
 
     # Labeling each region by its surface
     regions_sur = np.copy(regions)
-    for i in range(0, len(surface_areas)):
-        mask = np.array(np.where(regions_sur == i, regions_sur, 0), dtype=bool)
-        regions_sur[mask] = surface_areas[i]
+    for label, area in enumerate(surface_areas, start=1):
+        mask = regions == label
+        regions_sur[mask] = area
 
     fig, ax = plt.subplots(1, 2, figsize=[12, 5])
     ind = int(im.shape[slice]/2)
@@ -370,9 +371,9 @@ def REGION_VOLUMES(im, method='voxel', slice=0):    # returns r_volumes
     r_volumes = ps.metrics.region_volumes(regions=regions, method=method)
 
     regions_vol = np.copy(regions)
-    for i in range(0, len(r_volumes)):
-        mask = np.array(np.where(regions_vol == i, regions_vol, 0), dtype=bool)
-        regions_vol[mask] = r_volumes[i]
+    for label, volume in enumerate(r_volumes, start=1):
+        mask = regions == label
+        regions_vol[mask] = volume
 
     fig, ax = plt.subplots(1, 2, figsize=[12, 5])
     ind = int(im.shape[slice]/2)
@@ -443,3 +444,5 @@ def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  
 
     plt.show()
     return sp_list
+
+
