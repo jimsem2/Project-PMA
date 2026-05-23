@@ -3,3 +3,7 @@ matplotlib
 numpy
 scipy
 pandas
+h5py
+openpnm
+scikit-learn
+openpyxl

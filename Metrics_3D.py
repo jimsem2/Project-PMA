@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import porespy as ps
+import scipy.ndimage as spim
 from porespy.filters import fftmorphology
 from skimage.morphology import ball
 from edt import edt
-from sympy import im
 
 ps.visualization.set_mpl_style()
 np.random.seed(10)
@@ -396,6 +396,32 @@ def REGION_VOLUMES(im, method='voxel', slice=0):    # returns r_volumes
     return r_volumes
 
 
+def REGIONPROPS_3D(im):   # returns props
+    # im: binary image from Generators_3D
+
+    snow = ps.filters.snow_partitioning(im=im)
+    regions = spim.label(im)[0]     # to label the image for regionprops, snow partitioning is not used because it can assign the same label to different regions if they are not connected in the image, while spim.label will assign different labels to all disconnected regions in the image
+    props = ps.metrics.regionprops_3D(regions)
+
+    df = ps.metrics.props_to_DataFrame(props)
+
+    def _fmt(x):
+        if isinstance(x, float):
+            if np.isinf(x) or np.isnan(x):
+                return str(x)
+            if x == int(x):
+                return f'{x:.2f}'
+            return f'{x:.4f}'
+        return str(x)
+
+    df_str = df.map(_fmt)
+
+    df_str.to_excel('regionprops_3D.xlsx', index=True)
+    print("Table saved to regionprops_3D.xlsx")
+
+    return props
+
+
 def REV_POROSITY(im, n=1000):  # returns rev_porosity
     # im: binary image from Generators_3D
     # n: number of randomly located sized boxes, default 1000
@@ -445,4 +471,7 @@ def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  
     plt.show()
     return sp_list
 
-
+length = 100
+np.random.seed(7)
+im = ~ps.generators.overlapping_spheres([length, length], r=10, porosity=0.6)
+# REGIONPROPS_3D(im)
