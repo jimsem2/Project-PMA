@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import porespy as ps
 import scipy.ndimage as spim
+import imageio
 from porespy.filters import fftmorphology
 from skimage.morphology import ball
 from edt import edt
@@ -27,7 +28,7 @@ def BOND_NUMBER(im, g=9.81, sigma=0.01, delta_rho=1000, voxel_size=0.001, source
     return bn
 
 
-def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25, save_excel=False): # returns cc    XLSX
+def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25): # returns cc
     # works both with apply_chords and apply_chords_3D
     # Applies chords and counts their lengths
     # spacing: space between chords, trim_edges: to remove edges that touch borders
@@ -53,11 +54,6 @@ def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bi
         ax.set_ylabel('frequency')
 
     plt.show()
-
-    if save_excel:
-        pd.DataFrame({'chord_length': cc}).to_excel('chord_counts.xlsx', index=False)
-        print("Table saved to chord_counts.xlsx")
-
     return cc
 
 
@@ -86,7 +82,7 @@ def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.001, normaliz
     plt.show()
 
     if save_excel:
-        pd.DataFrame({'L': cld_data.L, 'pdf': cld_data.pdf, 'cdf': cld_data.cdf, 'bin_widths': cld_data.bin_widths}).to_excel('chord_length_distribution.xlsx', index=False)
+        pd.DataFrame({'L': cld_data.L, 'pdf': cld_data.pdf, 'cdf': cld_data.cdf}).to_excel('chord_length_distribution.xlsx', index=False)
         print("Table saved to chord_length_distribution.xlsx")
 
     return cld_data
@@ -166,7 +162,7 @@ def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel=Fa
     plt.show()
 
     if save_excel:
-        pd.DataFrame({'L': lpd_data.L, 'pdf': lpd_data.pdf, 'cdf': lpd_data.cdf, 'bin_widths': lpd_data.bin_widths}).to_excel('lineal_path_distribution.xlsx', index=False)
+        pd.DataFrame({'L': lpd_data.L, 'pdf': lpd_data.pdf, 'cdf': lpd_data.cdf}).to_excel('lineal_path_distribution.xlsx', index=False)
         print("Table saved to lineal_path_distribution.xlsx")
 
     return lpd_data
@@ -284,7 +280,7 @@ def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False, save_excel=Fals
     plt.show()
 
     if save_excel:
-        pd.DataFrame({'bin_centers': psd_data.bin_centers, 'pdf': psd_data.pdf, 'cdf': psd_data.cdf, 'bin_widths': psd_data.bin_widths}).to_excel('pore_size_distribution.xlsx', index=False)
+        pd.DataFrame({'bin_centers': psd_data.bin_centers, 'pdf': psd_data.pdf, 'cdf': psd_data.cdf}).to_excel('pore_size_distribution.xlsx', index=False)
         print("Table saved to pore_size_distribution.xlsx")
 
     return psd_data
@@ -349,13 +345,13 @@ def RADIAL_DENSITY_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel
     plt.show()
 
     if save_excel:
-        pd.DataFrame({'bin_centers': rdd_data.bin_centers, 'pdf': rdd_data.pdf, 'cdf': rdd_data.cdf, 'bin_widths': rdd_data.bin_widths}).to_excel('radial_density_distribution.xlsx', index=False)
+        pd.DataFrame({'bin_centers': rdd_data.bin_centers, 'pdf': rdd_data.pdf, 'cdf': rdd_data.cdf}).to_excel('radial_density_distribution.xlsx', index=False)
         print("Table saved to radial_density_distribution.xlsx")
 
     return rdd_data
 
 
-def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0, save_excel=False):   # returns surface_areas  XLSX
+def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0, save_excel=False):   # returns surface_areas, regions_sur XLSX
     # im: binary image from Generators_3D
     # voxel_size: used for scaling, 1 (default)
     # strel: structuring element used to blur the region, bigger size means region will become increasingly blurred and inaccurate
@@ -394,10 +390,10 @@ def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0, save_excel=Fal
         pd.DataFrame({'region': range(1, len(surface_areas) + 1), 'surface_area': surface_areas}).to_excel('region_surface_areas.xlsx', index=False)
         print("Table saved to region_surface_areas.xlsx")
 
-    return surface_areas
+    return surface_areas, regions_sur
 
 
-def REGION_VOLUMES(im, method='voxel', slice=0, save_excel=False):    # returns r_volumes XLSX
+def REGION_VOLUMES(im, method='voxel', slice=0, save_excel=False):    # returns r_volumes, regions_vol XLSX
     # im: binary image from Generators_3D
     # method: how the volume of each region is calculated, options: 'marching_cubes' (DEF) & 'voxel'
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
@@ -406,6 +402,7 @@ def REGION_VOLUMES(im, method='voxel', slice=0, save_excel=False):    # returns 
     regions = snow.regions
     r_volumes = ps.metrics.region_volumes(regions=regions, method=method)
 
+        # Assigning each region its volume
     regions_vol = np.copy(regions)
     for label, volume in enumerate(r_volumes, start=1):
         mask = regions == label
@@ -434,17 +431,27 @@ def REGION_VOLUMES(im, method='voxel', slice=0, save_excel=False):    # returns 
         pd.DataFrame({'region': range(1, len(r_volumes) + 1), 'volume': r_volumes}).to_excel('region_volumes.xlsx', index=False)
         print("Table saved to region_volumes.xlsx")
 
-    return r_volumes
+    return r_volumes, regions_vol
 
 
-def REGIONPROPS_3D(im):   # returns props
+def REGIONPROPS_3D(im, sphericity=False, solidity=False, num_pixels=False):   # returns props   XLSX
     # im: binary image from Generators_3D
 
-    snow = ps.filters.snow_partitioning(im=im)
     regions = spim.label(im)[0]     # to label the image for regionprops, snow partitioning is not used because it can assign the same label to different regions if they are not connected in the image, while spim.label will assign different labels to all disconnected regions in the image
     props = ps.metrics.regionprops_3D(regions)
 
     df = ps.metrics.props_to_DataFrame(props)
+
+        # Image generation for visualization of selected properties
+    if sphericity:
+        im_sph = ps.metrics.prop_to_image(props, im.shape, "sphericity")
+        imageio.volsave("im_sph.tif", np.array(im_sph.astype("uint8")))
+    if solidity:
+        im_solid = ps.metrics.prop_to_image(props, im.shape, "solidity")
+        imageio.volsave("im_solid.tif", np.array(im_solid.astype("uint8")))
+    if num_pixels:
+        im_pixels = ps.metrics.prop_to_image(props, im.shape, "num_pixels")
+        imageio.volsave("im_pixels.tif", np.array(im_pixels.astype("uint8")))
 
     def _fmt(x):
         if isinstance(x, float):
@@ -512,7 +519,6 @@ def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  
     plt.show()
     return sp_list
 
-length = 100
-np.random.seed(7)
-im = ~ps.generators.overlapping_spheres([length, length], r=10, porosity=0.6)
+length = 90
+im= ps.generators.blobs(shape=[length, length, length], porosity=0.5)
 REGIONPROPS_3D(im)
