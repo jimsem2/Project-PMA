@@ -45,16 +45,6 @@ def CYLINDERS(shape, radius=2, ncylinders=0, porosity=0, cyl_length=None):   #re
     return im
 
 
-    # shape: list, inlet, outlet: 0 for x axis, 1 for y, 2 for z, the values of the faces becomes TRUE
-
-    faces = ps.generators.faces(shape=shape, inlet=inlet, outlet=outlet)
-    ax = plt.figure().add_subplot(projection='3d')
-    ax.voxels(faces, edgecolor='k', linewidth=0.25)
-
-    plt.show()
-    return faces
-
-
 def OVERLAPPING_SPHERES(shape, radius, porosity, maxiter=10):  #returns im
     # r: controls size of spheres, maxiter: number of of iterations used to match the desired porosity default=10
 
