@@ -78,8 +78,7 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
     # steps: number of steps to show in the sequence map, default None (shows all steps)
     # save_excel: if True, saves the results in an Excel file, default False
 
-    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size,
-)   
+    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
     if axis is None:
         drn = ps.simulations.drainage(im=im, pc=pc, min_size=min_size, steps=steps)
     elif axis == 0:
@@ -102,10 +101,9 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=drn.im_pc, mode='drainage')
 
     fig, ax = plt.subplots(figsize=[3.5, 3.5])
-    ax.plot(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
+    ax.semilogx(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('Capillary Pressure [Pa]')
     ax.set_ylabel('Non-Wetting Phase Saturation')
-    ax.set_xlim([None, 100])
     ax.set_ylim([-0.05, 1.05])
     plt.show()
 
@@ -116,7 +114,7 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
     return drn
 
 
-def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_size=1e-4, axis=None, min_size=5, steps=None, save_excel=False):  # returns imb
+def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_size=1e-4, axis=None, min_size=5, steps=None, save_excel=False):  # returns imb XLSX
     # im: 3D image of porous media
     # sigma: surface tension, default 0.01 N/m
     # theta: contact angle, default 180 degrees
@@ -129,8 +127,7 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
     # steps: number of steps to show in the sequence map, default None (shows all steps)
     # save_excel: if True, saves the results in an Excel file, default False
 
-    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size,
-)   
+    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
     if axis is None:
         imb = ps.simulations.imbibition(im=im, pc=pc, min_size=min_size, steps=steps)
     elif axis == 0:
@@ -153,10 +150,9 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=imb.im_pc, mode='imbibition')
 
     fig, ax = plt.subplots(figsize=[3.5, 3.5])
-    ax.plot(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
+    ax.semilogx(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('Capillary Pressure [Pa]')
     ax.set_ylabel('Non-Wetting Phase Saturation')
-    ax.set_xlim([None, 100])
     ax.set_ylim([-0.05, 1.05])
     plt.show()
 
@@ -167,7 +163,7 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
 
 
 def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_size=1e-4, axis=None, min_size=5,
-               conn='max', maxiter=100, method='qbip', save_excel=None):  # returns inj
+               conn='max', maxiter=500, method='qbip', save_excel=None):  # returns inj XLSX
     # im: 3D image of porous media
     # sigma: surface tension, default 0.01 N/m
     # theta: contact angle, default 180 degrees
@@ -178,7 +174,7 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     # axis: axis along which imbibition occurs, 0 for x, 1 for y, 2 for z, default None (imbibition occurs from all directions)
     # min_size: the number of clustered pixels below which are ignored as trapped, default 5 voxels
     # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection)
-    # maxiter: maximum number of iterations for the injection process, default 100
+    # maxiter: maximum number of iterations for the injection process, default 500
     # method: algorith used for finding the next voxel to be invaded, options: 'qbip' default (uses a binary heap, faster), 'ibip' (uses image analysis tools)
 
     pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
@@ -202,13 +198,13 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     plot_results(im, inj, axis)
 
     # Plotting Saturation curve
-    Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=inj.im_pc, mode='drainage')
+    Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=inj.im_pc, seq=inj.im_seq, mode='drainage')
 
     fig, ax = plt.subplots(figsize=[3.5, 3.5])
-    ax.plot(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
-    ax.set_xlabel('Capillary Pressure [Pa]')
+    ax.plot(np.log10(Pc), Snwp, markersize=6, linewidth=1, color='blue')
+    ax.set_xlabel('log(Capillary Pressure [Pa])')
     ax.set_ylabel('Non-Wetting Phase Saturation')
-    ax.set_xlim([None, 100])
+    ax.set_xlim([None, None])
     ax.set_ylim([-0.05, 1.05])
     plt.show()
 
@@ -225,4 +221,5 @@ def TORTUOSITY(im, axis=0): # returns t_fd
     t_fd = ps.simulations.tortuosity_fd(im, axis=axis)
     print(t_fd)
     return t_fd
+
 
