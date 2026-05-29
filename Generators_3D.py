@@ -4,6 +4,7 @@ import numpy as np
 import scipy as sp
 import scipy.stats as spst
 import pandas as pd
+import imageio
 ps.visualization.set_mpl_style()
 np.random.seed(10)                      # eraze for randomly creating an object
 
@@ -21,6 +22,7 @@ def BLOBS(shape, porosity=0.5, blobiness=1):  #returns im
     ax.imshow(ps.visualization.show_3D(im), interpolation='none')
 
     plt.show()
+    imageio.volsave("Blobs.tif", np.array(im.astype("uint8")))
     return im
 
 
@@ -42,6 +44,7 @@ def CYLINDERS(shape, radius=2, ncylinders=0, porosity=0, cyl_length=None):   #re
     # ax.voxels(~im, edgecolor='k', linewidth=0.25)
 
     plt.show()
+    imageio.volsave("Cylinders.tif", np.array(im.astype("uint8")))
     return im
 
 
@@ -55,6 +58,7 @@ def OVERLAPPING_SPHERES(shape, radius, porosity, maxiter=10):  #returns im
     print('porosity = ', ps.metrics.porosity(im))
 
     plt.show()
+    imageio.volsave("Overlapping_Spheres.tif", np.array(im.astype("uint8")))
     return im
 
 
@@ -70,6 +74,7 @@ def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3):  #returns im
     ax.axis(False)
 
     plt.show()
+    imageio.volsave("Polydisperse_Spheres.tif", np.array(im.astype("uint8")))
     return im
 
 
@@ -90,6 +95,7 @@ def PSEUDO_GRAVITY_PACKING(im, radius, maxiter, clearance=0, pk_axis=0):  #retur
         ax.imshow(ps.visualization.show_3D(packing), interpolation='none', origin='lower')
         ax.axis(False)
     plt.show()
+    imageio.volsave("Pseudo_Gravity_Packing.tif", np.array(packing.astype("uint8")))
     return packing
 
 
@@ -102,5 +108,6 @@ def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True):
     ax.axis(False)
 
     plt.show()
+    imageio.volsave("Voronoi_Edges.tif", np.array(im.astype("uint8")))
     return im
 

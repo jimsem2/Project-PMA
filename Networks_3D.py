@@ -38,10 +38,9 @@ def MAP_TO_REGIONS(im, slice=0):
     ws.settings['loglevel'] = 50
     ps.visualization.set_mpl_style()
 
-    # Creating network
-    fig, ax = plt.subplots(1, figsize=[4, 4])
-    ps.visualization.imshow((im), axis=slice, ind=int(im.shape[slice]/2))
+    # Applying snow partitioning
     snow_output = ps.networks.snow2(im, voxel_size=1)
+    # Creating network
     pn = op.io.network_from_porespy(snow_output.network)
 
     # Assigning values to network
@@ -50,35 +49,6 @@ def MAP_TO_REGIONS(im, slice=0):
     fig, ax = plt.subplots()
     reg = ps.networks.map_to_regions(regions=snow_output.regions.T, values=pn['pore.values'])
     plt.imshow((reg)[:, :, ind])
-    plt.show()
-
-
-def REGIONS_TO_NETWORK(im, slice=0):
-    # phases: image indicating to which phase each voxel belongs
-    # voxel_size: resolution of image
-    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
-
-    snow = ps.filters.snow_partitioning(im)
-    fig, ax = plt.subplots(1, figsize=[4, 4])
-    ps.visualization.imshow((snow.regions/im), axis=slice, ind=int(im.shape[slice]/2))
-
-    # Printing network information
-    net1 = ps.networks.regions_to_network(regions=snow.regions)
-    for item in net1.keys():
-        print(item)
-
-    # For multiphased objects
-    snow2 = ps.filters.snow_partitioning(~im)
-    fig, ax = plt.subplots(1, figsize=[4, 4])
-    ps.visualization.imshow((snow2.regions), axis=slice, ind=int(im.shape[slice]/2))
-    ws = snow.regions + (snow2.regions + snow.regions.max())*~im
-    fig, ax = plt.subplots(1, figsize=[4, 4])
-    ps.visualization.imshow((ws), axis=slice, ind=int(im.shape[slice]/2))
-
-    # Printing network information
-    net2 = ps.networks.regions_to_network(regions=ws, phases=im.astype(int)+1, voxel_size=1e-5)
-    for item in net2.keys():
-        print(item)
     plt.show()
 
 
