@@ -1,3 +1,5 @@
+from tokenize import Name
+
 import matplotlib.pyplot as plt
 import numpy as np
 import porespy as ps
@@ -14,22 +16,28 @@ pn = op.io.network_from_porespy(im_snow2.network)
 output_dir = "results_paraview"
 os.makedirs(output_dir, exist_ok=True)
 
+# Axis labels mapping: axis -> (inlet face, outlet face, coordinate index)
+AXIS_MAP = {
+    "x": ("left", "right", 0),
+    "y": ("front", "back", 1),
+    "z": ("bottom", "top", 2),
+}
 
-def select_phase(network, phase_name):
-    """
-    Create and add a phase to the network.
 
-    Parameters
-    ----------
-    network : op.network.Network
-        The pore network to add the phase to.
-    phase_name : str
-        Name of the phase: 'water', 'air', or 'mercury'.
+def get_axis_faces(axis):
+    """Return (inlet_label, outlet_label, coord_index) for a given axis."""
+    axis = axis.strip().lower()
+    if axis not in AXIS_MAP:
+        raise ValueError(f"Unknown axis '{axis}'. Choose 'x', 'y', or 'z'.")
+    return AXIS_MAP[axis]
 
-    Returns
-    -------
-    phase : op.phase object
-    """
+
+# Create and add a phase to the network
+
+def select_phase(network, phase_name):  # returns phase
+    # network: the pore network to which the phase will be added
+    # phase_name: string indicating the type of phase ('water', 'air', 'mercury')
+
     phase_name = phase_name.strip().lower()
     if phase_name == "water":
         phase = op.phase.Water(network=network, name="water")
@@ -59,19 +67,23 @@ def select_phase(network, phase_name):
 
 # Single Phase Flow Simulations
 
-
-def simulate_stokes_flow(network, phase):
+def simulate_stokes_flow(network, phase, axis="x"):
     """
     Simulate Stokes flow to calculate pressure gradients, velocity
     distributions, and Darcy permeability.
 
+    Parameters
+    ----------
+    axis : str
+        The axis along which the pressure drop is applied ('x', 'y', or 'z').
+
     Results are saved as VTK for ParaView.
     """
+    inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     sf = op.algorithms.StokesFlow(network=network, phase=phase)
 
-    # Boundary conditions: pressure drop along x-axis
-    inlet_pores = network.pores("left")
-    outlet_pores = network.pores("right")
+    inlet_pores = network.pores(inlet_label)
+    outlet_pores = network.pores(outlet_label)
 
     sf.set_value_BC(pores=inlet_pores, values=1.0)
     sf.set_value_BC(pores=outlet_pores, values=0.0)
@@ -83,7 +95,7 @@ def simulate_stokes_flow(network, phase):
 
     # Calculate flow rate through the outlet
     flow_rate = sf.rate(pores=outlet_pores, mode="group")
-    print(f"Total flow rate through outlet: {flow_rate[0]:.6e}")
+    print(f"Total flow rate through outlet ({axis}-axis): {flow_rate[0]:.6e}")
 
     # Calculate velocity at throats (Q / A)
     throat_area = network["throat.cross_sectional_area"]
@@ -93,8 +105,12 @@ def simulate_stokes_flow(network, phase):
 
     # Calculate Darcy permeability: K = Q * mu * L / (A * dP)
     mu = phase["pore.viscosity"].mean()
-    L = np.ptp(network["pore.coords"][:, 0])  # length along x
-    A = L * L  # cross-sectional area (assuming cubic domain)
+    L = np.ptp(network["pore.coords"][:, coord_idx])  # length along chosen axis
+    # Cross-sectional area from the other two axes
+    other_axes = [i for i in range(3) if i != coord_idx]
+    L1 = np.ptp(network["pore.coords"][:, other_axes[0]])
+    L2 = np.ptp(network["pore.coords"][:, other_axes[1]])
+    A = L1 * L2
     delta_P = 1.0  # applied pressure difference
     K = np.abs(flow_rate[0]) * mu * L / (A * delta_P)
     print(f"Darcy permeability: {K:.6e} m^2")
@@ -107,17 +123,23 @@ def simulate_stokes_flow(network, phase):
     return sf, K
 
 
-def simulate_fickian_diffusion(network, phase):
+def simulate_fickian_diffusion(network, phase, axis="x"):
     """
     Simulate Fickian diffusion to calculate concentration distributions,
     effective diffusivity, and tortuosity.
 
+    Parameters
+    ----------
+    axis : str
+        The axis along which the concentration gradient is applied ('x', 'y', or 'z').
+
     Results are saved as VTK for ParaView.
     """
+    inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     fd = op.algorithms.FickianDiffusion(network=network, phase=phase)
 
-    inlet_pores = network.pores("left")
-    outlet_pores = network.pores("right")
+    inlet_pores = network.pores(inlet_label)
+    outlet_pores = network.pores(outlet_label)
 
     fd.set_value_BC(pores=inlet_pores, values=1.0)
     fd.set_value_BC(pores=outlet_pores, values=0.0)
@@ -129,12 +151,15 @@ def simulate_fickian_diffusion(network, phase):
 
     # Calculate diffusive rate
     diff_rate = fd.rate(pores=outlet_pores, mode="group")
-    print(f"Total diffusive rate through outlet: {diff_rate[0]:.6e}")
+    print(f"Total diffusive rate through outlet ({axis}-axis): {diff_rate[0]:.6e}")
 
     # Calculate effective diffusivity: D_eff = J * L / (A * dC)
     D_bulk = phase["pore.diffusivity"].mean()
-    L = np.ptp(network["pore.coords"][:, 0])
-    A = L * L
+    L = np.ptp(network["pore.coords"][:, coord_idx])
+    other_axes = [i for i in range(3) if i != coord_idx]
+    L1 = np.ptp(network["pore.coords"][:, other_axes[0]])
+    L2 = np.ptp(network["pore.coords"][:, other_axes[1]])
+    A = L1 * L2
     delta_C = 1.0
     D_eff = np.abs(diff_rate[0]) * L / (A * delta_C)
     print(f"Effective diffusivity: {D_eff:.6e} m^2/s")
@@ -152,18 +177,25 @@ def simulate_fickian_diffusion(network, phase):
     return fd, D_eff, tau
 
 
-def simulate_advection_diffusion(network, phase):
+def simulate_advection_diffusion(network, phase, axis="x"):
     """
     Simulate combined advection-diffusion to calculate concentration field,
     Peclet number, and combined flux.
 
+    Parameters
+    ----------
+    axis : str
+        The axis along which the flow and diffusion occur ('x', 'y', or 'z').
+
     Requires Stokes flow to be solved first (pressure field must exist).
     Results are saved as VTK for ParaView.
     """
+    inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
+
     # First solve Stokes flow to get the pressure field
     if "pore.pressure" not in phase.keys():
         print("Running Stokes flow first to establish velocity field...")
-        simulate_stokes_flow(network, phase)
+        simulate_stokes_flow(network, phase, axis=axis)
 
     # Add advection-diffusion conductance model
     phase.add_model(
@@ -174,8 +206,8 @@ def simulate_advection_diffusion(network, phase):
 
     ad = op.algorithms.AdvectionDiffusion(network=network, phase=phase)
 
-    inlet_pores = network.pores("left")
-    outlet_pores = network.pores("right")
+    inlet_pores = network.pores(inlet_label)
+    outlet_pores = network.pores(outlet_label)
 
     ad.set_value_BC(pores=inlet_pores, values=1.0)
     ad.set_value_BC(pores=outlet_pores, values=0.0)
@@ -187,11 +219,11 @@ def simulate_advection_diffusion(network, phase):
 
     # Calculate combined flux
     combined_rate = ad.rate(pores=outlet_pores, mode="group")
-    print(f"Combined advection-diffusion rate: {combined_rate[0]:.6e}")
+    print(f"Combined advection-diffusion rate ({axis}-axis): {combined_rate[0]:.6e}")
 
     # Calculate Peclet number: Pe = v * L / D
     D_bulk = phase["pore.diffusivity"].mean()
-    L = np.ptp(network["pore.coords"][:, 0])
+    L = np.ptp(network["pore.coords"][:, coord_idx])
     if "throat.velocity" in phase.keys():
         v_mean = phase["throat.velocity"].mean()
     else:
@@ -210,16 +242,22 @@ def simulate_advection_diffusion(network, phase):
 # Two Phase Flow Simulations
 
 
-def simulate_drainage(network, invading_phase, defending_phase):
+def simulate_drainage(network, invading_phase, defending_phase, axis="x"):
     """
     Simulate drainage (non-wetting phase displacing wetting phase).
     Plots and saves the capillary pressure-saturation curve.
 
+    Parameters
+    ----------
+    axis : str
+        The axis along which invasion occurs ('x', 'y', or 'z').
+
     Results are saved as VTK for ParaView.
     """
+    inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     drain = op.algorithms.Drainage(phase=invading_phase)
 
-    inlet_pores = network.pores("left")
+    inlet_pores = network.pores(inlet_label)
     drain.set_inlet_BC(pores=inlet_pores)
     drain.run(pressures=50)
 
@@ -252,16 +290,22 @@ def simulate_drainage(network, invading_phase, defending_phase):
     return drain, pc_data
 
 
-def simulate_invasion_percolation(network, invading_phase, defending_phase):
+def simulate_invasion_percolation(network, invading_phase, defending_phase, axis="x"):
     """
     Simulate invasion percolation (step-by-step invasion of non-wetting phase).
     Plots and saves the capillary pressure-saturation curve.
 
+    Parameters
+    ----------
+    axis : str
+        The axis along which invasion occurs ('x', 'y', or 'z').
+
     Results are saved as VTK for ParaView.
     """
+    inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     ip = op.algorithms.InvasionPercolation(phase=invading_phase)
 
-    inlet_pores = network.pores("left")
+    inlet_pores = network.pores(inlet_label)
     ip.set_inlet_BC(pores=inlet_pores)
     ip.run()
 
@@ -302,21 +346,25 @@ if __name__ == "__main__":
     phase_choice = input("Select a phase to add to the network: ")
     phase = select_phase(pn, phase_choice)
 
+    # Axis selection
+    print("\nAvailable axes: x, y, z")
+    axis_choice = input("Select the axis along which simulations will run: ")
+
     # --- Single Phase Flow Simulations ---
     print("\n" + "=" * 50)
     print("STOKES FLOW SIMULATION")
     print("=" * 50)
-    sf, K = simulate_stokes_flow(pn, phase)
+    sf, K = simulate_stokes_flow(pn, phase, axis=axis_choice)
 
     print("\n" + "=" * 50)
     print("FICKIAN DIFFUSION SIMULATION")
     print("=" * 50)
-    fd, D_eff, tau = simulate_fickian_diffusion(pn, phase)
+    fd, D_eff, tau = simulate_fickian_diffusion(pn, phase, axis=axis_choice)
 
     print("\n" + "=" * 50)
     print("ADVECTION-DIFFUSION SIMULATION")
     print("=" * 50)
-    ad, Pe, combined_flux = simulate_advection_diffusion(pn, phase)
+    ad, Pe, combined_flux = simulate_advection_diffusion(pn, phase, axis=axis_choice)
 
     # --- Two Phase Flow Simulations ---
     print("\n" + "=" * 50)
@@ -328,7 +376,7 @@ if __name__ == "__main__":
     invading_phase = select_phase(pn, phase2_choice)
 
     print("\n--- Drainage Simulation ---")
-    drain, drain_pc = simulate_drainage(pn, invading_phase, phase)
+    drain, drain_pc = simulate_drainage(pn, invading_phase, phase, axis=axis_choice)
 
     print("\n--- Invasion Percolation Simulation ---")
-    ip, ip_pc = simulate_invasion_percolation(pn, invading_phase, phase)
+    ip, ip_pc = simulate_invasion_percolation(pn, invading_phase, phase, axis=axis_choice)
