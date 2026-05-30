@@ -89,10 +89,13 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
         inlets = ps.generators.faces(im.shape, inlet=1)
         outlets = ps.generators.faces(im.shape, outlet=1)
         drn = ps.simulations.drainage(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, steps=steps)
-    else:
+    elif axis == 2:
         inlets = ps.generators.faces(im.shape, inlet=2)
         outlets = ps.generators.faces(im.shape, outlet=2)
         drn = ps.simulations.drainage(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, steps=steps)
+    else:
+        raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
+
 
     # imageio.volsave("drainage.tif", np.array(drn.astype("uint8")))
     plot_results(im, drn, axis)
@@ -138,10 +141,12 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
         inlets = ps.generators.faces(im.shape, inlet=1)
         outlets = ps.generators.faces(im.shape, outlet=1)
         imb = ps.simulations.imbibition(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, steps=steps)
-    else:
+    elif axis == 2:
         inlets = ps.generators.faces(im.shape, inlet=2)
         outlets = ps.generators.faces(im.shape, outlet=2)
         imb = ps.simulations.imbibition(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, steps=steps)
+    else:
+        raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
 
     # imageio.volsave("imbibition.tif", np.array(imb.astype("uint8")))
     plot_results(im, imb, axis)
@@ -189,10 +194,12 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
         inlets = ps.generators.faces(im.shape, inlet=1)
         outlets = ps.generators.faces(im.shape, outlet=1)
         inj = ps.simulations.injection(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, conn=conn, maxiter=maxiter, method=method)
-    else:
+    elif axis == 2:
         inlets = ps.generators.faces(im.shape, inlet=2)
         outlets = ps.generators.faces(im.shape, outlet=2)
         inj = ps.simulations.injection(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, conn=conn, maxiter=maxiter, method=method)
+    else:
+        raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
 
     # imageio.volsave("injection.tif", np.array(inj.astype("uint8")))
     plot_results(im, inj, axis)
