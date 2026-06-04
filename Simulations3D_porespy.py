@@ -3,9 +3,34 @@ import numpy as np
 import porespy as ps
 import imageio
 import pandas as pd
+from pyevtk.hl import imageToVTK
 
 ps.visualization.set_mpl_style()
 np.random.seed(10)
+
+
+def save_results_vtk(filename, im, res):
+    """Export simulation results as VTK ImageData (.vti) for ParaView visualization.
+
+    Saves multiple fields in a single file: binary geometry, invasion sequence,
+    non-wetting phase saturation, and capillary pressure.
+    """
+    # pyevtk requires Fortran-ordered contiguous arrays
+    geometry = np.ascontiguousarray(im.astype(np.float64))
+    seq = np.ascontiguousarray(res.im_seq.astype(np.float64))
+    snwp = np.ascontiguousarray(res.im_snwp.astype(np.float64))
+    pc = np.ascontiguousarray(res.im_pc.astype(np.float64))
+
+    pointData = {
+        "geometry": geometry,
+        "invasion_sequence": seq,
+        "saturation_nwp": snwp,
+        "capillary_pressure": pc,
+    }
+    # imageToVTK appends .vti extension automatically
+    imageToVTK(filename, pointData=pointData)
+    print(f"VTK file saved to: {filename}.vti")
+
 
 def plot_results(im, res, axis):
     fig, ax = plt.subplots(1, 3, figsize=[15, 4])
@@ -97,7 +122,7 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
         raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
 
 
-    # imageio.volsave("drainage.tif", np.array(drn.astype("uint8")))
+    save_results_vtk("drainage", im, drn)
     plot_results(im, drn, axis)
 
     # Plotting Saturation curve
@@ -148,7 +173,7 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
     else:
         raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
 
-    # imageio.volsave("imbibition.tif", np.array(imb.astype("uint8")))
+    save_results_vtk("imbibition", im, imb)
     plot_results(im, imb, axis)
 
     # Plotting Saturation curve
@@ -201,7 +226,7 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     else:
         raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
 
-    # imageio.volsave("injection.tif", np.array(inj.astype("uint8")))
+    save_results_vtk("injection", im, inj)
     plot_results(im, inj, axis)
 
     # Plotting Saturation curve
@@ -228,5 +253,4 @@ def TORTUOSITY(im, axis=0): # returns t_fd
     t_fd = ps.simulations.tortuosity_fd(im, axis=axis)
     print(t_fd)
     return t_fd
-
 

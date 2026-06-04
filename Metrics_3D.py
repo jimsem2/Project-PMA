@@ -83,7 +83,7 @@ def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.001, normaliz
 
     if save_excel:
         pd.DataFrame({'L': cld_data.L, 'pdf': cld_data.pdf, 'cdf': cld_data.cdf}).to_excel('chord_length_distribution.xlsx', index=False)
-        print("Table saved to chord_length_distribution.xlsx")
+        print("Plot saved to chord_length_distribution.xlsx")
 
     return cld_data
 
@@ -163,7 +163,7 @@ def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel=Fa
 
     if save_excel:
         pd.DataFrame({'L': lpd_data.L, 'pdf': lpd_data.pdf, 'cdf': lpd_data.cdf}).to_excel('lineal_path_distribution.xlsx', index=False)
-        print("Table saved to lineal_path_distribution.xlsx")
+        print("Plot saved to lineal_path_distribution.xlsx")
 
     return lpd_data
 
@@ -235,7 +235,7 @@ def PC_MAP_TO_PC_CURVE(im, sigma=0.01, theta=180, voxel_size=1, steps=25, save_e
 
     if save_excel:
         pd.DataFrame({'pc': pc_curve.pc, 'snwp': pc_curve.snwp}).to_excel('pc_map_to_pc_curve.xlsx', index=False)
-        print("Table saved to pc_map_to_pc_curve.xlsx")
+        print("Plot saved to pc_map_to_pc_curve.xlsx")
 
     return pc_curve
 
@@ -281,7 +281,7 @@ def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False, save_excel=Fals
 
     if save_excel:
         pd.DataFrame({'bin_centers': psd_data.bin_centers, 'pdf': psd_data.pdf, 'cdf': psd_data.cdf}).to_excel('pore_size_distribution.xlsx', index=False)
-        print("Table saved to pore_size_distribution.xlsx")
+        print("Plot saved to pore_size_distribution.xlsx")
 
     return psd_data
 
@@ -346,7 +346,7 @@ def RADIAL_DENSITY_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel
 
     if save_excel:
         pd.DataFrame({'bin_centers': rdd_data.bin_centers, 'pdf': rdd_data.pdf, 'cdf': rdd_data.cdf}).to_excel('radial_density_distribution.xlsx', index=False)
-        print("Table saved to radial_density_distribution.xlsx")
+        print("Plot saved to radial_density_distribution.xlsx")
 
     return rdd_data
 

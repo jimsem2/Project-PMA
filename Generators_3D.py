@@ -1,3 +1,5 @@
+from turtle import shape
+
 import porespy as ps
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,7 +28,7 @@ def BLOBS(shape, porosity=0.5, blobiness=1):  #returns im
     return im
 
 
-def CYLINDERS(shape, radius=2, ncylinders=0, porosity=0, cyl_length=None):   #returns im, ! Only 3D shapes
+def CYLINDERS(shape, radius=2, ncylinders=10, porosity=0.5, cyl_length=None):   #returns im, ! Only 3D shapes
     # By controlling the number of cyliders
     # ncylinders: number of cyl
     if ncylinders > 0:
@@ -44,7 +46,7 @@ def CYLINDERS(shape, radius=2, ncylinders=0, porosity=0, cyl_length=None):   #re
     # ax.voxels(~im, edgecolor='k', linewidth=0.25)
 
     plt.show()
-    imageio.volsave("Cylinders.tif", np.array(im.astype("uint8")))
+    # imageio.volsave("Cylinders.tif", np.array(im.astype("uint8")))
     return im
 
 
@@ -111,3 +113,4 @@ def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True):
     imageio.volsave("Voronoi_Edges.tif", np.array(im.astype("uint8")))
     return im
 
+CYLINDERS(shape=[100,100,100], radius=4, ncylinders=500, porosity=0.2, cyl_length=None)

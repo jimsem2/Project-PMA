@@ -190,5 +190,3 @@ def TRIM_NONPERCOLATING_PATHS(im, perc_axis='x', slice=0, show_slice=True): # re
         plt.show()
 
     return trimmed_paths
-
-
