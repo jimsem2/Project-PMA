@@ -8,20 +8,19 @@ import os
 # Path to the test image
 image_dir = os.path.join(os.path.dirname(__file__), "test_image")
 image_file = os.path.join(image_dir, "test_image.tif")
-slices_dir = os.path.join(image_dir, "slices")  # folder of 2D tif slices
+slices_dir = os.path.join(image_dir, "z_slices")  # folder of 2D tif slices
 
 # Output directory
 output_dir = os.path.join(image_dir, "3d_result")
 os.makedirs(output_dir, exist_ok=True)
+
 
 # ============ Load the 3D image ============
 # If a folder of 2D slices exists, load them using imread_collection (PoreSpy convention)
 # Otherwise, load a single 3D tif file using imageio.volread
 if os.path.isdir(slices_dir) and len(os.listdir(slices_dir)) > 0:
     seq = imread_collection(os.path.join(slices_dir, "*.tif"))
-    im3d = np.zeros([*seq[0].shape, len(seq)])
-    for i, im in enumerate(seq):
-        im3d[..., i] = im
+    im3d = np.stack(seq, axis=-1)
     print(f"Image loaded from 2D slices via imread_collection: shape={im3d.shape}, dtype={im3d.dtype}")
 else:
     im3d = imageio.volread(image_file)
