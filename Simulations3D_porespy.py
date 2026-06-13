@@ -35,24 +35,6 @@ def save_results_vtk(filename, im, res):
 def plot_results(im, res, axis):
     fig, ax = plt.subplots(1, 3, figsize=[15, 4])
     if axis is None or axis == 0:
-        h = ax[0].imshow((res.im_seq / im)[int(im.shape[0]/2), :, :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
-        cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
-        ax[0].axis(False)
-        ax[0].set_title("(a) Sequence Map")
-
-        h = ax[1].imshow((res.im_snwp / im)[int(im.shape[0]/2), :, :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("Non-Wetting Phase Saturation", rotation=90, y=0, c="w")
-        ax[1].axis(False)
-        ax[1].set_title("(b) Saturation Map")
-
-        h = ax[2].imshow(np.log10(res.im_pc)[int(im.shape[0]/2), :, :] / im[int(im.shape[0]/2), :, :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
-        ax[2].axis(False)
-        ax[2].set_title("(c) Capillary Pressure Map")
-    elif axis == 1:
         h = ax[0].imshow((res.im_seq / im)[:, int(im.shape[1]/2), :])
         cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
         cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
@@ -70,7 +52,7 @@ def plot_results(im, res, axis):
         cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
         ax[2].axis(False)
         ax[2].set_title("(c) Capillary Pressure Map")
-    else:
+    elif axis == 1:
         h = ax[0].imshow((res.im_seq / im)[:, :, int(im.shape[2]/2)])
         cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
         cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
@@ -84,6 +66,24 @@ def plot_results(im, res, axis):
         ax[1].set_title("(b) Saturation Map")
 
         h = ax[2].imshow(np.log10(res.im_pc)[:, :, int(im.shape[2]/2)] / im[:, :, int(im.shape[2]/2)])
+        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
+        cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
+        ax[2].axis(False)
+        ax[2].set_title("(c) Capillary Pressure Map")
+    else:
+        h = ax[0].imshow((res.im_seq / im)[int(im.shape[0]/2), :, :])
+        cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
+        cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
+        ax[0].axis(False)
+        ax[0].set_title("(a) Sequence Map")
+
+        h = ax[1].imshow((res.im_snwp / im)[int(im.shape[0]/2), :, :])
+        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
+        cbar.ax.set_title("Non-Wetting Phase Saturation", rotation=90, y=0, c="w")
+        ax[1].axis(False)
+        ax[1].set_title("(b) Saturation Map")
+
+        h = ax[2].imshow(np.log10(res.im_pc)[int(im.shape[0]/2), :, :] / im[int(im.shape[0]/2), :, :])
         cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
         cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
         ax[2].axis(False)
@@ -119,7 +119,7 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
         outlets = ps.generators.faces(im.shape, outlet=2)
         drn = ps.simulations.drainage(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, steps=steps)
     else:
-        raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
+        raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
 
     save_results_vtk("drainage", im, drn)
@@ -128,7 +128,7 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
     # Plotting Saturation curve
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=drn.im_pc, mode='drainage')
 
-    fig, ax = plt.subplots(figsize=[3.5, 3.5])
+    fig, ax = plt.subplots(figsize=[4, 4])
     ax.semilogx(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('Capillary Pressure [Pa]')
     ax.set_ylabel('Non-Wetting Phase Saturation')
@@ -171,7 +171,7 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
         outlets = ps.generators.faces(im.shape, outlet=2)
         imb = ps.simulations.imbibition(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, steps=steps)
     else:
-        raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
+        raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
     save_results_vtk("imbibition", im, imb)
     plot_results(im, imb, axis)
@@ -179,7 +179,7 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
     # Plotting Saturation curve
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=imb.im_pc, mode='imbibition')
 
-    fig, ax = plt.subplots(figsize=[3.5, 3.5])
+    fig, ax = plt.subplots(figsize=[4, 4])
     ax.semilogx(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('Capillary Pressure [Pa]')
     ax.set_ylabel('Non-Wetting Phase Saturation')
@@ -201,7 +201,7 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     # rho_nwp: non-wetting phase density, default 1000 kg/m^3
     # rho_wp: wetting phase density, default 0 kg/m^3
     # voxel_size: size of each voxel, default 1e-4 m
-    # axis: axis along which imbibition occurs, 0 for x, 1 for y, 2 for z, default None (imbibition occurs from all directions)
+    # axis: axis along which injection occurs, 0 for x, 1 for y, 2 for z, default None (injection occurs from all directions)
     # min_size: the number of clustered pixels below which are ignored as trapped, default 5 voxels
     # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection)
     # maxiter: maximum number of iterations for the injection process, default 500
@@ -224,7 +224,7 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
         outlets = ps.generators.faces(im.shape, outlet=2)
         inj = ps.simulations.injection(im=im, pc=pc, min_size=min_size, inlets=inlets, outlets=outlets, conn=conn, maxiter=maxiter, method=method)
     else:
-        raise ValueError(f"Unknown axis '{axis}'. Choose 0, 1, or 2.")
+        raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
     save_results_vtk("injection", im, inj)
     plot_results(im, inj, axis)
@@ -232,7 +232,7 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     # Plotting Saturation curve
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=inj.im_pc, seq=inj.im_seq, mode='drainage')
 
-    fig, ax = plt.subplots(figsize=[3.5, 3.5])
+    fig, ax = plt.subplots(figsize=[4, 4])
     ax.plot(np.log10(Pc), Snwp, markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('log(Capillary Pressure [Pa])')
     ax.set_ylabel('Non-Wetting Phase Saturation')

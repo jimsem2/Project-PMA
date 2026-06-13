@@ -61,16 +61,17 @@ def FILL_CLOSED_PORES(im, conn=26, slice=0, show_slice=True): # returns im_fille
     return im_filled_pores
 
 
-def FIND_DISCONNECTED_VOXELS(im, conn=max): # retunrs discon_voxels
-    # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection) 
+def FIND_DISCONNECTED_VOXELS(im, conn=max, show_3d=True): # retunrs discon_voxels
+    # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection)
+    # show_3d: if True, displays the 3D plot of the disconnected voxels
 
     discon_voxels = ps.filters.find_disconnected_voxels(im, conn=conn)
-    fig, ax = plt.subplots(1, figsize=[6, 6])
-    x1 = ps.visualization.show_3D(~discon_voxels)
-    ax.imshow(x1)
-    ax.axis(False)
-
-    plt.show()
+    if show_3d:
+        fig, ax = plt.subplots(1, figsize=[6, 6])
+        x1 = ps.visualization.show_3D(~discon_voxels)
+        ax.imshow(x1)
+        ax.axis(False)
+        plt.show()
     return discon_voxels
 
 
@@ -89,17 +90,25 @@ def LOCAL_THICKNESS(im, sizes=10, method='dt', divs=2, slice=0, show_slice=True)
     return lt
 
 
-def POROSIMETRY(im, sizes=15, method='dt', slice=0, show_slice=True): # returns pores
+def POROSIMETRY(im, sizes=15, method='dt', slice=0, show_slice=True, inv_axis=None): # returns pores
     # sizes: Number of spheres of different diameter to be used. Can be a list of values
     # inlets: Characterizing entrance of invading fluid. 0: for the first slice of an axis, -1: for first from the end
     # method: Naturally it sould only affect process speed. Options: 'dt'(DF), 'conv', 'dsi'
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
     # show_slice: if True, displays the slice plot
+    # inv_axis: axis of invasion, 0 for x, 1 for y, 2 for z. If None, no inlets are used
 
-    fluid_entr = input('\nWhould you like the invading fluid to enter only through one side (y/n): ')
-    if fluid_entr == 'y':
+    if inv_axis == 0:
         inlets = np.zeros_like(im)
-        inlets[0, :, :] = True                                  # [x,:,:]: the fluid will enter through a x axis side
+        inlets[0, :, :] = True
+        pores = ps.filters.porosimetry(im=im, sizes=sizes, inlets=inlets, method=method)
+    elif inv_axis == 1:
+        inlets = np.zeros_like(im)
+        inlets[:, 0, :] = True
+        pores = ps.filters.porosimetry(im=im, sizes=sizes, inlets=inlets, method=method)
+    elif inv_axis == 2:
+        inlets = np.zeros_like(im)
+        inlets[:, :, 0] = True
         pores = ps.filters.porosimetry(im=im, sizes=sizes, inlets=inlets, method=method)
     else:
         pores = ps.filters.porosimetry(im=im, sizes=sizes, method=method)
@@ -162,17 +171,17 @@ def TRIM_FLOATING_SOLID(im, conn='max', slice=0, show_slice=True): # returns tri
     return trimed_im
 
 
-def TRIM_NONPERCOLATING_PATHS(im, perc_axis='x', slice=0, show_slice=True): # returns trimmed_paths
+def TRIM_NONPERCOLATING_PATHS(im, perc_axis=0, slice=0, show_slice=True): # returns trimmed_paths
     # perc_axis: axis of percolation
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
     # show_slice: if True, displays the slice plots
 
     inlets = np.zeros_like(im)
     outlets = np.zeros_like(im)
-    if perc_axis == 'x':
+    if perc_axis == 0:
         inlets[0, :, :] = True
         outlets[-1, :, :] = True
-    elif perc_axis == 'y':
+    elif perc_axis == 1:
         inlets[:, 0, :] = True
         outlets[:, -1, :] = True
     else:

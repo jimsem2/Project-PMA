@@ -57,7 +57,7 @@ def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bi
     return cc
 
 
-def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=0.001, normalization='number', apply_chords3D=True, axis=0, save_excel=False):   # returns cld_data  XLSX
+def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, normalization='number', apply_chords3D=True, axis=0, save_excel=False):   # returns cld_data  XLSX
     # im: binary image from Generators_3D
     # bins: number of classes for the histogram, 25 (default)
     # log: logarithmic scale, if True then 'data.L' must be 'data.LogL' in the diagrams
@@ -168,39 +168,21 @@ def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel=Fa
     return lpd_data
 
 
-def MESH_SURFACE_AREA(im, pore_label=None): # returns surface_area
+def MESH_SURFACE_AREA(im): # returns surface_area
     # im: binary image from Generators_3D
-    # pore_label: if provided, calculates area of that specific pore region
 
     mesh = ps.tools.mesh_region(region=im)
     surface_area = ps.metrics.mesh_surface_area(mesh=mesh)
     print('surface area of void space is', str(surface_area))
 
-    if pore_label is not None:
-        snow = ps.filters.snow_partitioning(im=im)
-        regions = snow.regions / im
-        pore_region = regions == pore_label
-        mesh = ps.tools.mesh_region(region=pore_region)
-        area = ps.metrics.mesh_surface_area(mesh=mesh)
-        print('surface area of the meshed pore region is', str(area))
-        return area
-
     return surface_area
 
 
-def MESH_VOLUME(im, pore_label=None):   # returns volume
+def MESH_VOLUME(im):   # returns volume
     # im: binary image from Generators_3D
-    # pore_label: if provided, calculates volume of that specific pore region
 
     volume = ps.metrics.mesh_volume(region=im)
     print('Total volume is =', volume)
-
-    if pore_label is not None:
-        snow = ps.filters.snow_partitioning(im=im)
-        regions = snow.regions / im
-        pore_region = regions == pore_label
-        volume = ps.metrics.mesh_volume(region=pore_region)
-        print('Selected pore volume is = ', volume)
 
     return volume
 
@@ -290,7 +272,7 @@ def POROSITY(im):   # returns porosity
     # im: binary image from Generators_3D
 
     porosity = ps.metrics.porosity(im=im)
-    print('Porosity:', porosity)
+    print(f"Porosity (void fraction): {porosity:.4f}")
 
     return porosity
 
@@ -474,7 +456,7 @@ def REV_POROSITY(im, n=1000):  # returns rev_porosity
     # im: binary image from Generators_3D
     # n: number of randomly located sized boxes, default 1000
 
-    rev_porosity = ps.metrics.rev_porosity(im=im)
+    rev_porosity = ps.metrics.rev_porosity(im=im, n=n)
 
     fig, ax = plt.subplots(1, 1, figsize=[6, 6])
     ax.plot(rev_porosity.volume, rev_porosity.porosity, "r.")
@@ -485,19 +467,19 @@ def REV_POROSITY(im, n=1000):  # returns rev_porosity
     return rev_porosity
 
 
-def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  # returns sp_list
+def SATN_PROFILE(im, span=2, mode='tile', intr_axis=0, sigma=0.01, theta=180, g=0):  # returns sp_list
     # im: binary image from Generators_3D
     # span: width of slice over which the saturation is computed, default 2 voxels
     # mode: How averaging window moves, options: by sliding ('slide') or by tiling ('tile')
-    # axis: the axis along which the intrusion happens, options: 0 for x axis, 1 for y axis, 2 for z axis
+    # intr_axis: the axis along which the intrusion happens, options: 0 for x axis, 1 for y axis, 2 for z axis
     # sigma: surface tension of the fluid-fluid system of interest
     # theta: contact angle measured through the invading phase in degrees
     # g: gravitational acceleration, 0 (default)
 
     inlets = np.zeros_like(im)
-    if axis == 0:
+    if intr_axis == 0:
         inlets[0, :, :] = True
-    elif axis == 1:
+    elif intr_axis == 1:
         inlets[:, 0, :] = True
     else:
         inlets[:, :, 0] = True
@@ -509,7 +491,7 @@ def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  
     s_values = np.arange(0.1, 1.0, 0.2)
     sp_list = []
     for s_value in s_values:
-        sp = ps.metrics.satn_profile(satn=inv.im_snwp, s=s_value, span=span, mode=mode, axis=axis)
+        sp = ps.metrics.satn_profile(satn=inv.im_snwp, s=s_value, span=span, mode=mode, axis=intr_axis)
         sp_list.append(sp)
         ax.plot(sp.position, sp.saturation, '-o', label=f's={s_value:.1f}')
     ax.set_xlabel("distance from injection face")
@@ -519,6 +501,3 @@ def SATN_PROFILE(im, span=2, mode='tile', axis=0, sigma=0.01, theta=180, g=0):  
     plt.show()
     return sp_list
 
-length = 90
-im= ps.generators.blobs(shape=[length, length, length], porosity=0.5)
-REGIONPROPS_3D(im)

@@ -46,7 +46,7 @@ def CYLINDERS(shape, radius=2, ncylinders=10, porosity=0.5, cyl_length=None):   
     # ax.voxels(~im, edgecolor='k', linewidth=0.25)
 
     plt.show()
-    # imageio.volsave("Cylinders.tif", np.array(im.astype("uint8")))
+    imageio.volsave("Cylinders.tif", np.array(im.astype("uint8")))
     return im
 
 
@@ -83,7 +83,7 @@ def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3):  #returns im
 def PSEUDO_GRAVITY_PACKING(im, radius, maxiter, clearance=0, pk_axis=0):  #returns packing
     # im: can also be a list
     # r: radius of spheres, # clearance: <0 for overlaping between spheres, # maxiter: maximum number of spheres to add
-    # axis: direction of gravity (default axis=0 -> x=0)
+    # pk_axis: direction of gravity (default axis=0 -> x=0)
 
     if isinstance(im, list):
         im = np.zeros(im, dtype=bool)
@@ -102,7 +102,8 @@ def PSEUDO_GRAVITY_PACKING(im, radius, maxiter, clearance=0, pk_axis=0):  #retur
 
 
 def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True):
-    # ncells: number of cells # flat_faces = false : for edges to be true, r: thickness of edge (default=1)
+    # ncells: number of cells
+    # flat_faces = false : for edges to be true, r: thickness of edge (default=1)
 
     im = ps.generators.voronoi_edges(shape=shape, r=thickness, ncells=ncells, flat_faces=flat_faces)
     fig, ax = plt.subplots(figsize=[8, 8])
@@ -112,5 +113,3 @@ def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True):
     plt.show()
     imageio.volsave("Voronoi_Edges.tif", np.array(im.astype("uint8")))
     return im
-
-CYLINDERS(shape=[100,100,100], radius=4, ncylinders=500, porosity=0.2, cyl_length=None)
