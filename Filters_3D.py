@@ -22,9 +22,9 @@ def APPLY_CHORDS(im, spacing=1, axis=1, trim_edges=False, label=True, slice=0, s
 
     ac = ps.filters.apply_chords(im=im, spacing=spacing, axis=axis, trim_edges=trim_edges, label=label)
     if show_slice:
-        fig, ax = plt.subplots(1, figsize=[4, 4])
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow((ac), axis=slice, ind=int(im.shape[slice]/2))
-        ax.axis(False)
+        plt.axis(False)
         plt.show()
     return ac
 
@@ -53,10 +53,10 @@ def FILL_CLOSED_PORES(im, conn=26, slice=0, show_slice=True): # returns im_fille
 
     im_filled_pores = ps.filters.fill_closed_pores(im, conn=conn)
     if show_slice:
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow(im_filled_pores, axis=slice, ind=int(im.shape[slice]/2))          # For showing a plane from 3D image, ind: which slice to show
-        ax.set_title(f'Slice along axis {slice}')
-        ax.axis(False)
+        plt.title(f'Slice along axis {slice}')
+        plt.axis(False)
         plt.show()
     return im_filled_pores
 
@@ -81,11 +81,11 @@ def LOCAL_THICKNESS(im, sizes=10, method='dt', divs=2, slice=0, show_slice=True)
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
     # show_slice: if True, displays the slice plot
 
-    lt = ps.filters.local_thickness(im=im, sizes=sizes, method=method, divs=divs)
+    lt = ps.filters.local_thickness(im=im, sizes=sizes, method=method)
     if show_slice:
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow(lt/im, axis=slice, ind=int(im.shape[slice]/2))
-        ax.axis(False)
+        plt.axis(False)
         plt.show()
     return lt
 
@@ -114,9 +114,9 @@ def POROSIMETRY(im, sizes=15, method='dt', slice=0, show_slice=True, inv_axis=No
         pores = ps.filters.porosimetry(im=im, sizes=sizes, method=method)
 
     if show_slice:
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow((pores/im), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        ax.axis(False)
+        plt.axis(False)
 
     # Creating a cumulative histogram
     fig, ax = plt.subplots(1, figsize=[6, 6])
@@ -134,8 +134,7 @@ def REGION_SIZE(im, slice=0, show_slice=True): # returns RS
 
     RS = ps.filters.region_size(im=im)
     if show_slice:
-        ind=int(im.shape[slice]/2)
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow((RS), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
         plt.axis(False)
         plt.show()
@@ -150,9 +149,9 @@ def TRIM_DISCONNECTED_VOXELS(im, conn='max', slice=0, show_slice=True): # return
     inlets = ps.tools.get_border(shape=im.shape, mode='faces')
     trim_discon_voxels = ps.filters.trim_disconnected_voxels(im=im, inlets=inlets, conn=conn)
     if show_slice:
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow((trim_discon_voxels), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        ax.axis(False)
+        plt.axis(False)
         plt.show()
     return trim_discon_voxels
 
@@ -164,9 +163,9 @@ def TRIM_FLOATING_SOLID(im, conn='max', slice=0, show_slice=True): # returns tri
 
     trimed_im = ps.filters.trim_floating_solid(im=im, conn=conn)
     if show_slice:
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow((trimed_im), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        ax.axis(False)
+        plt.axis(False)
         plt.show()
     return trimed_im
 
@@ -190,12 +189,11 @@ def TRIM_NONPERCOLATING_PATHS(im, perc_axis=0, slice=0, show_slice=True): # retu
 
     trimmed_paths = ps.filters.trim_nonpercolating_paths(im=im, inlets=inlets, outlets=outlets)
     if show_slice:
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        # ps.visualization.imshow() creates its own figure each call, so we don't pre-create any.
         ps.visualization.imshow((trimmed_paths), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        ax.axis(False)
-        fig, ax = plt.subplots(1, figsize=[6, 6])
+        plt.axis(False)
         ps.visualization.imshow((trimmed_paths + (im != trimmed_paths)*0.5), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        ax.axis(False)
+        plt.axis(False)
         plt.show()
 
     return trimmed_paths

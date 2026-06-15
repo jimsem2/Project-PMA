@@ -27,7 +27,6 @@ def BLOBS(shape, porosity=0.5, blobiness=1):  #returns im
     imageio.volsave("Blobs.tif", np.array(im.astype("uint8")))
     return im
 
-
 def CYLINDERS(shape, radius=2, ncylinders=10, porosity=0.5, cyl_length=None):   #returns im, ! Only 3D shapes
     # By controlling the number of cyliders
     # ncylinders: number of cyl

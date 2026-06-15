@@ -7,39 +7,49 @@ import pandas as pd
 import openpnm as op
 import os
 
-length = 60
-im = ps.generators.blobs(shape=[length, length, length], porosity=0.6, blobiness=2, seed=10)
-
-def prep_image(im, voxel_size=1):
-    im_snow2 = ps.networks.snow2(im, voxel_size=voxel_size)
-    pn = op.io.network_from_porespy(im_snow2.network)
-    return pn
-pn = prep_image()
-
-# Trim disconnected clusters so transport algorithms aren't ill-conditioned.
-health = op.utils.check_network_health(pn)
-if len(health['disconnected_pores']) > 0:
-    op.topotools.trim(network=pn, pores=health['disconnected_pores'])
-    print(f"Trimmed {len(health['disconnected_pores'])} disconnected pores.")
-
-# Add geometric size-factor models required by Hagen-Poiseuille / Fickian conductance models.
-# Networks extracted from PoreSpy don't include these by default and use different
-# naming for diameter / length, so we first create the expected aliases.
-# Use pyramids_and_cuboids since it does not require throat diameter < pore diameter.
-pn['pore.diameter'] = pn['pore.equivalent_diameter']
-pn['throat.diameter'] = pn['throat.inscribed_diameter']
-pn['throat.length'] = pn['throat.total_length']
-pn.add_model(propname='throat.hydraulic_size_factors',
-             model=op.models.geometry.hydraulic_size_factors.pyramids_and_cuboids)
-pn.add_model(propname='throat.diffusive_size_factors',
-             model=op.models.geometry.diffusive_size_factors.pyramids_and_cuboids)
-# Throat volume (cylinder approx.) is needed by Drainage.pc_curve()
-pn.add_model(propname='throat.volume',
-             model=op.models.geometry.throat_volume.cylinder)
-pn.regenerate_models()
-
+# Module-level state. These are populated by build_network() (called by the GUI
+# or by the __main__ block below) instead of being built at import time, so that
+# importing this module is cheap and the network can be built from any image.
+im = None
+pn = None
 output_dir = "results_paraview"
-os.makedirs(output_dir, exist_ok=True)
+
+
+def build_network(image, voxel_size=1):
+    """Build an OpenPNM network from a PoreSpy binary image.
+
+    Stores the image and network in module globals (im, pn) so the transport
+    functions below can reference them as defaults, and returns the network.
+    """
+    global im, pn
+    im = image
+    os.makedirs(output_dir, exist_ok=True)
+
+    im_snow2 = ps.networks.snow2(image, voxel_size=voxel_size)
+    pn = op.io.network_from_porespy(im_snow2.network)
+
+    # Trim disconnected clusters so transport algorithms aren't ill-conditioned.
+    health = op.utils.check_network_health(pn)
+    if len(health['disconnected_pores']) > 0:
+        op.topotools.trim(network=pn, pores=health['disconnected_pores'])
+        print(f"Trimmed {len(health['disconnected_pores'])} disconnected pores.")
+
+    # Add geometric size-factor models required by Hagen-Poiseuille / Fickian conductance models.
+    # Networks extracted from PoreSpy don't include these by default and use different
+    # naming for diameter / length, so we first create the expected aliases.
+    # Use pyramids_and_cuboids since it does not require throat diameter < pore diameter.
+    pn['pore.diameter'] = pn['pore.equivalent_diameter']
+    pn['throat.diameter'] = pn['throat.inscribed_diameter']
+    pn['throat.length'] = pn['throat.total_length']
+    pn.add_model(propname='throat.hydraulic_size_factors',
+                 model=op.models.geometry.hydraulic_size_factors.pyramids_and_cuboids)
+    pn.add_model(propname='throat.diffusive_size_factors',
+                 model=op.models.geometry.diffusive_size_factors.pyramids_and_cuboids)
+    # Throat volume (cylinder approx.) is needed by Drainage.pc_curve()
+    pn.add_model(propname='throat.volume',
+                 model=op.models.geometry.throat_volume.cylinder)
+    pn.regenerate_models()
+    return pn
 
 # Axis labels mapping: axis -> (inlet face, outlet face, coordinate index)
 # PoreSpy networks label boundary pores as xmin/xmax/ymin/ymax/zmin/zmax.
@@ -60,40 +70,51 @@ def get_axis_faces(axis):
 
 # Create and add a phase to the network
 
-def select_phase(network=pn, phase_name='water'):  # returns phase
+def select_phase(network=None, phase_name='water', diffusivity=None, viscosity=None,
+                 contact_angle=None, surface_tension=None):  # returns phase
     # network: the pore network to which the phase will be added
     # phase_name: string indicating the type of phase ('water', 'air', 'mercury')
-    
+    # diffusivity / viscosity / contact_angle / surface_tension: optional overrides.
+    #   When None, the code-defined default (or correlation model) for the phase is used.
+    #   A unique phase name is generated automatically so the same network can host
+    #   several phases across repeated simulation runs without name clashes.
+
+    if network is None:
+        network = pn
     phase_name = phase_name.strip().lower()
     if phase_name == "water":
-        phase = op.phase.Water(network=network, name="water")
-        # Add viscosity model for water (temperature-dependent)
-        phase.add_model(propname='pore.viscosity',
-                       model=op.models.phase.viscosity.water_correlation)
+        phase = op.phase.Water(network=network)
+        # Add viscosity model for water (temperature-dependent) unless overridden.
+        if viscosity is None:
+            phase.add_model(propname='pore.viscosity',
+                           model=op.models.phase.viscosity.water_correlation)
+        else:
+            phase["pore.viscosity"] = viscosity
         # OpenPNM's Water phase doesn't define diffusivity by default.
         # Use water self-diffusion coefficient at room temperature.
-        phase["pore.diffusivity"] = 2.3e-9  # m^2/s (25 °C, 1 atm)
-        phase["pore.contact_angle"] = 110.0  # degrees, water on hydrophobic substrate
+        phase["pore.diffusivity"] = 2.3e-9 if diffusivity is None else diffusivity  # m^2/s (25 °C)
+        phase["pore.contact_angle"] = 110.0 if contact_angle is None else contact_angle  # degrees
     elif phase_name == "air":
-        phase = op.phase.Air(network=network, name="air")
-        # Add viscosity model for air (Sutherland correlation)
-        phase.add_model(propname='pore.viscosity',
-                       model=op.models.phase.viscosity.gas_viscosity)
+        phase = op.phase.Air(network=network)
+        # The Air phase already defines pore.viscosity via its default models,
+        # so we only replace it when an explicit override is supplied.
+        if viscosity is not None:
+            phase["pore.viscosity"] = viscosity
         # Air phase lacks surface tension and contact angle. Use water-air
         # interfacial tension (~0.072 N/m) and assume air is the non-wetting
         # phase with contact angle 0° (measured through the invading phase).
-        phase["pore.surface_tension"] = 0.072  # N/m (with water)
-        phase["pore.diffusivity"] = 2.5e-5     # m^2/s (25 °C, 1 atm)
-        phase["pore.contact_angle"] = 120.0    # degrees
+        phase["pore.surface_tension"] = 0.072 if surface_tension is None else surface_tension  # N/m
+        phase["pore.diffusivity"] = 2.5e-5 if diffusivity is None else diffusivity     # m^2/s (25 °C)
+        phase["pore.contact_angle"] = 120.0 if contact_angle is None else contact_angle    # degrees
     elif phase_name == "mercury":
-        phase = op.phase.Mercury(network=network, name="mercury")
+        phase = op.phase.Mercury(network=network)
         # Add constant viscosity for mercury (less sensitive to temperature)
-        phase["pore.viscosity"] = 1.53e-3  # Pa·s at room temperature
+        phase["pore.viscosity"] = 1.53e-3 if viscosity is None else viscosity  # Pa·s at room temp
         # Mercury phase doesn't define diffusivity by default.
-        phase["pore.diffusivity"] = 1.7e-9  # m^2/s (Hg self-diffusion approx.)
+        phase["pore.diffusivity"] = 1.7e-9 if diffusivity is None else diffusivity  # m^2/s (approx.)
         # Mercury intrusion: surface tension ~0.485 N/m, contact angle ~140°
-        phase["pore.surface_tension"] = 0.485
-        phase["pore.contact_angle"] = 140.0
+        phase["pore.surface_tension"] = 0.485 if surface_tension is None else surface_tension
+        phase["pore.contact_angle"] = 140.0 if contact_angle is None else contact_angle
     else:
         raise ValueError(f"Unknown phase '{phase_name}'. Choose 'water', 'air', or 'mercury'.")
 
@@ -127,12 +148,15 @@ def select_phase(network=pn, phase_name='water'):  # returns phase
     return phase
 
 
-def simulate_stokes_flow(network=pn, chosen_phase='water', axis="x", inlet_pressure=1.0, outlet_pressure=0.0):
+def simulate_stokes_flow(network=None, chosen_phase='water', axis="x", inlet_pressure=1.0, outlet_pressure=0.0,
+                         phase_overrides=None):
     # Simulate Stokes flow to calculate pressure gradients, velocity distributions, and Darcy permeability
     # axis: The axis along which the pressure drop is applied ('x', 'y', or 'z')
     # Results are saved as VTK for ParaView
 
-    phase = select_phase(phase_name=chosen_phase)
+    if network is None:
+        network = pn
+    phase = select_phase(network=network, phase_name=chosen_phase, **(phase_overrides or {}))
 
     inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     sf = op.algorithms.StokesFlow(network=network, phase=phase)
@@ -174,12 +198,15 @@ def simulate_stokes_flow(network=pn, chosen_phase='water', axis="x", inlet_press
     return sf, K
 
 
-def simulate_fickian_diffusion(network=pn, chosen_phase='water', axis="x", inlet_concentration=1.0, outlet_concentration=0.0):
+def simulate_fickian_diffusion(network=None, chosen_phase='water', axis="x", inlet_concentration=1.0, outlet_concentration=0.0,
+                               phase_overrides=None):
     # Simulate Fickian diffusion to calculate concentration distributions, effective diffusivity, and tortuosity.
     # axis : The axis along which the concentration gradient is applied ('x', 'y', or 'z').
     # Results are saved as VTK for ParaView.
 
-    phase = select_phase(phase_name=chosen_phase)
+    if network is None:
+        network = pn
+    phase = select_phase(network=network, phase_name=chosen_phase, **(phase_overrides or {}))
 
     inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     fd = op.algorithms.FickianDiffusion(network=network, phase=phase)
@@ -221,20 +248,31 @@ def simulate_fickian_diffusion(network=pn, chosen_phase='water', axis="x", inlet
     return fd, D_eff, tort
 
 
-def simulate_advection_diffusion(network=pn, chosen_phase='water', axis="x", inlet_pressure=1.0, outlet_pressure=0.0, inlet_concentration=1.0, outlet_concentration=0.0):
+def simulate_advection_diffusion(network=None, chosen_phase='water', axis="x", inlet_pressure=1.0, outlet_pressure=0.0, inlet_concentration=1.0, outlet_concentration=0.0,
+                                 phase_overrides=None):
     # Simulate combined advection-diffusion to calculate concentration field, Peclet number, and combined flux.
     # axis : The axis along which the flow and diffusion occur ('x', 'y', or 'z').
     # Requires Stokes flow to be solved first (pressure field must exist).
     # Results are saved as VTK for ParaView.
 
-    phase = select_phase(phase_name=chosen_phase)
+    if network is None:
+        network = pn
+    phase = select_phase(network=network, phase_name=chosen_phase, **(phase_overrides or {}))
 
     inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
 
-    # First solve Stokes flow to get the pressure field
+    # First solve Stokes flow on this same phase to establish the velocity field
+    # (advection-diffusion needs throat.velocity / pore.pressure).
     if "pore.pressure" not in phase.keys():
         print("Running Stokes flow first to establish velocity field...")
-        simulate_stokes_flow(network, phase=phase, axis=axis, inlet_pressure=inlet_pressure, outlet_pressure=outlet_pressure)
+        sf = op.algorithms.StokesFlow(network=network, phase=phase)
+        sf.set_value_BC(pores=network.pores(inlet_label), values=inlet_pressure)
+        sf.set_value_BC(pores=network.pores(outlet_label), values=outlet_pressure)
+        sf.run()
+        phase["pore.pressure"] = sf["pore.pressure"]
+        throat_area = network["throat.cross_sectional_area"]
+        throat_flow = sf.rate(throats=network.Ts, mode="single")
+        phase["throat.velocity"] = np.abs(throat_flow / throat_area)
 
     # Add advection-diffusion conductance model
     phase.add_model(
@@ -282,15 +320,18 @@ def simulate_advection_diffusion(network=pn, chosen_phase='water', axis="x", inl
 # Two Phase Flow Simulations
 
 
-def simulate_drainage(network=pn, inv_phase='air', def_phase='water', axis="x", save_excel=False):
+def simulate_drainage(network=None, inv_phase='air', def_phase='water', axis="x", save_excel=False,
+                      phase_overrides=None):
     # Simulate drainage (non-wetting phase displacing wetting phase).
     # Plots and saves the capillary pressure-saturation curve.
     # axis : The axis along which invasion occurs ('x', 'y', or 'z').
     # Results are saved as VTK for ParaView.
     # save_excel: if True, saves the saturation curve data in an Excel file, default False
 
-    invading_phase = select_phase(phase_name=inv_phase)
-    defending_phase = select_phase(phase_name=def_phase)
+    if network is None:
+        network = pn
+    invading_phase = select_phase(network=network, phase_name=inv_phase, **(phase_overrides or {}))
+    defending_phase = select_phase(network=network, phase_name=def_phase)
 
     inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     drain = op.algorithms.Drainage(network=network, phase=invading_phase)
@@ -333,15 +374,18 @@ def simulate_drainage(network=pn, inv_phase='air', def_phase='water', axis="x", 
     return drain, pc_data
 
 
-def simulate_invasion_percolation(network=pn, inv_phase='air', def_phase='water', axis="x", save_excel=False):
+def simulate_invasion_percolation(network=None, inv_phase='air', def_phase='water', axis="x", save_excel=False,
+                                  phase_overrides=None):
     # Simulate invasion percolation (step-by-step invasion of non-wetting phase).
     # Plots and saves the capillary pressure-saturation curve.
     # axis : The axis along which invasion occurs ('x', 'y', or 'z').
     # Results are saved as VTK for ParaView.
     # save_excel: if True, saves the saturation curve data in an Excel file, default False
 
-    invading_phase = select_phase(phase_name=inv_phase)
-    defending_phase = select_phase(phase_name=def_phase)
+    if network is None:
+        network = pn
+    invading_phase = select_phase(network=network, phase_name=inv_phase, **(phase_overrides or {}))
+    defending_phase = select_phase(network=network, phase_name=def_phase)
 
     inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     ip = op.algorithms.InvasionPercolation(network=network, phase=invading_phase)
@@ -385,6 +429,11 @@ def simulate_invasion_percolation(network=pn, inv_phase='air', def_phase='water'
 
 
 # ===================== MAIN EXECUTION =====================
+
+if __name__ == "__main__":
+    # Build a default network from a generated blob image when run standalone.
+    length = 60
+    build_network(ps.generators.blobs(shape=[length, length, length], porosity=0.6, blobiness=2, seed=10))
 
 # if __name__ == "__main__":
 #     # Phase selection
