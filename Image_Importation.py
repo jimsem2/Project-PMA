@@ -33,7 +33,7 @@ print(f"Image dimensions: {im3d.shape}")
 print(f"Voxel value range: {im3d.min()} to {im3d.max()}")
 
 # Visualize a slice of the 3D image (z-slices are on the last axis)
-fig, ax = subplots(figsize=[6, 6])
+fig, ax = plt.subplots(figsize=[6, 6])
 mid = im3d.shape[2] // 2
 ax.imshow(im3d[:, :, mid], cmap="gray")
 ax.set_title("Middle slice (axis 2)")

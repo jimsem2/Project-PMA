@@ -51,35 +51,3 @@ def MAP_TO_REGIONS(im, slice=0):
     plt.imshow((reg)[:, :, ind])
     plt.show()
 
-
-def SNOW2(im, slice=0):
-    # boundary_width: Adding pores/nodes on the boundaries of images is helpful when conducting transport simulations
-    # voxel_size: resolution of image
-    # parallelization: dividing the image into chunks and processing each in parallel (more info on porespy.filters.snow_partitioning_parallel)
-    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
-
-    fig, ax = plt.subplots(1, figsize=[4, 4])
-    ps.visualization.imshow((im), axis=slice, ind=int(im.shape[slice]/2))
-
-    # Applying snow2 filter
-    net2 = ps.networks.snow2(phases=im.astype(int) + 1, boundary_width=[[2, 0], 4, [0, 2]], parallelization={'cores': 1, 'divs': 2, 'overlap': 1})   # adding '.astype(int)+1 to make it two phased
-    fig, ax = plt.subplots(1, figsize=[4, 4])
-    ps.visualization.imshow((net2.regions), axis=slice, ind=int(im.shape[slice]/2))
-
-    # Overlaying the network with the image
-    pn2 = op.io.network_from_porespy(net2.network)
-    #   Differnieting connections and coordinates of the 2 phases
-    ax = op.visualization.plot_connections(pn2, throats=pn2['throat.phase2_phase2'], c='k')
-    ax = op.visualization.plot_connections(pn2, throats=pn2['throat.phase2_phase1'], c='grey', ax=ax)
-    ax = op.visualization.plot_coordinates(pn2, pores=pn2['pore.phase2'], c='r', markersize=50, ax=ax)
-    ax = op.visualization.plot_coordinates(pn2, pores=pn2['pore.phase1'], c='g', markersize=50, ax=ax)
-    fig, ax = plt.gcf(), plt.gca()      # gcf: get current figure, gca: get current axis
-    ax.imshow((net2.regions.T)[:, :, ind])
-    ax.axis(False)
-
-    # Using Alias
-    net2alias = ps.networks.snow2(phases=im.astype(int) + 1, phase_alias={1: 'solid', 2: 'void'}, boundary_width=0)
-    pn2alias = op.io.network_from_porespy(net2alias.network)
-    print(pn2alias)
-    
-    plt.show()
