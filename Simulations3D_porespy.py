@@ -90,6 +90,7 @@ def plot_results(im, res, axis):
         ax[2].set_title("(c) Capillary Pressure Map")
     plt.show()
 
+
 def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_size=1e-4, axis=None, min_size=5, steps=None, save_excel=False):    # returns drn XLSX
     # im: 3D image of porous media
     # sigma: surface tension, default 0.01 N/m

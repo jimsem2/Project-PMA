@@ -6,6 +6,7 @@ import imageio
 import pandas as pd
 import openpnm as op
 import os
+np.random.seed(10)
 
 # Module-level state. These are populated by build_network() (called by the GUI
 # or by the __main__ block below) instead of being built at import time, so that
@@ -435,43 +436,3 @@ if __name__ == "__main__":
     length = 60
     build_network(ps.generators.blobs(shape=[length, length, length], porosity=0.6, blobiness=2, seed=10))
 
-# if __name__ == "__main__":
-#     # Phase selection
-#     print("Available phases: water, air, mercury")
-#     phase_choice = input("Select a phase to add to the network: ")
-#     phase = select_phase(pn, phase_choice)
-
-#     # Axis selection
-#     print("\nAvailable axes: x, y, z")
-#     axis_choice = input("Select the axis along which simulations will run: ")
-
-#     # --- Single Phase Flow Simulations ---
-#     print("\n" + "=" * 50)
-#     print("STOKES FLOW SIMULATION")
-#     print("=" * 50)
-#     sf, K = simulate_stokes_flow(pn, phase, axis=axis_choice)
-
-#     print("\n" + "=" * 50)
-#     print("FICKIAN DIFFUSION SIMULATION")
-#     print("=" * 50)
-#     fd, D_eff, tau = simulate_fickian_diffusion(pn, phase, axis=axis_choice)
-
-#     print("\n" + "=" * 50)
-#     print("ADVECTION-DIFFUSION SIMULATION")
-#     print("=" * 50)
-#     ad, Pe, combined_flux = simulate_advection_diffusion(pn, phase, axis=axis_choice)
-
-#     # --- Two Phase Flow Simulations ---
-#     print("\n" + "=" * 50)
-#     print("TWO PHASE FLOW SIMULATIONS")
-#     print("=" * 50)
-#     print("Select a second phase for two-phase simulations.")
-#     print("Available phases: water, air, mercury")
-#     phase2_choice = input("Select the invading (non-wetting) phase: ")
-#     invading_phase = select_phase(pn, phase2_choice)
-
-#     print("\n--- Drainage Simulation ---")
-#     drain, drain_pc = simulate_drainage(pn, invading_phase, phase, axis=axis_choice)
-
-#     print("\n--- Invasion Percolation Simulation ---")
-#     ip, ip_pc = simulate_invasion_percolation(pn, invading_phase, phase, axis=axis_choice)

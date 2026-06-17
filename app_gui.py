@@ -28,9 +28,12 @@ Design notes
 
 import os
 import io
+import re
 import sys
 import traceback
 import contextlib
+
+_ANSI_RE = re.compile(r'\x1b\[[\d;]*[A-Za-z]')
 
 import matplotlib
 matplotlib.use("TkAgg")          # native pop-up plot windows
@@ -147,18 +150,34 @@ class ScrollableFrame(tk.Frame):
 
 
 class ResultBox(tk.Frame):
-    """A label with a coloured border used to show captured output / errors."""
+    """A selectable text area with a coloured border for captured output / errors."""
 
     def __init__(self, master):
         super().__init__(master, bg="#bbbbbb", padx=2, pady=2)
-        self.label = tk.Label(self, text="(no result yet)", bg="white", anchor="w",
-                              justify="left", wraplength=380)
-        self.label.pack(fill="both", expand=True)
+        self._text = tk.Text(self, height=4, bg="white", fg="#000000",
+                             relief="flat", wrap="word", state="disabled",
+                             font=("Segoe UI", 10), cursor="xterm")
+        vsb = ttk.Scrollbar(self, orient="vertical", command=self._text.yview)
+        self._text.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        self._text.pack(side="left", fill="both", expand=True)
+        # Scroll inside the box without moving the outer window.
+        self._text.bind("<MouseWheel>", self._on_scroll)
+        self._set("(no result yet)")
+
+    def _on_scroll(self, event):
+        self._text.yview_scroll(int(-event.delta / 120), "units")
+        return "break"
+
+    def _set(self, content):
+        self._text.configure(state="normal")
+        self._text.delete("1.0", "end")
+        self._text.insert("1.0", content)
+        self._text.configure(state="disabled")
 
     def show(self, text, ok=True):
         self.configure(bg="#2e7d32" if ok else "#c62828")
-        self.label.configure(text=text if text else ("Done." if ok else "Error"),
-                             fg="#000000")
+        self._set(text if text else ("Done." if ok else "Error"))
 
 
 class SingleSelect:
@@ -252,11 +271,189 @@ def section_order(sel):
     return int(s) if s else None
 
 
+def _ask_raw_params(parent, file_size):
+    """Dialog to collect shape and dtype for a headerless .raw file.
+    Auto-suggests values from the file size. Returns (shape_tuple, dtype_str) or (None, None)."""
+    suggested_shape, suggested_dtype = "", "uint8"
+    for dtype_bytes, dtype_name in [(1, "uint8"), (2, "uint16"), (4, "float32")]:
+        n = file_size // dtype_bytes
+        if n * dtype_bytes != file_size:
+            continue
+        side = round(n ** (1 / 3))
+        for s in range(max(1, side - 2), side + 3):
+            if s ** 3 == n:
+                suggested_shape = f"{s},{s},{s}"
+                suggested_dtype = dtype_name
+                break
+        if suggested_shape:
+            break
+
+    result = {"shape": None, "dtype": None}
+
+    dlg = tk.Toplevel(parent)
+    dlg.title("Raw image parameters")
+    dlg.resizable(False, False)
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    tk.Label(dlg, text="Raw image import",
+             font=("Segoe UI", 11, "bold")).pack(padx=16, pady=(14, 4))
+    tk.Label(dlg, text=f"File size: {file_size:,} bytes\n"
+                       "Enter the volume dimensions and data type.",
+             fg="#555", justify="center").pack(padx=16, pady=(0, 10))
+
+    frm = tk.Frame(dlg)
+    frm.pack(fill="x", padx=16, pady=4)
+    tk.Label(frm, text="Shape (slices, H, W):", anchor="w").grid(row=0, column=0, sticky="w", pady=3, padx=(0, 8))
+    shape_var = tk.StringVar(value=suggested_shape)
+    tk.Entry(frm, textvariable=shape_var, width=22).grid(row=0, column=1, sticky="w", pady=3)
+    tk.Label(frm, text="Data type:", anchor="w").grid(row=1, column=0, sticky="w", pady=3, padx=(0, 8))
+    dtype_var = tk.StringVar(value=suggested_dtype)
+    ttk.Combobox(frm, textvariable=dtype_var, state="readonly", width=20,
+                 values=["uint8", "uint16", "uint32", "int16", "float32", "float64"]
+                 ).grid(row=1, column=1, sticky="w", pady=3)
+
+    def _ok():
+        try:
+            parts = [int(x.strip()) for x in shape_var.get().replace(";", ",").split(",") if x.strip()]
+            if len(parts) != 3:
+                raise ValueError("Need exactly 3 values.")
+            expected = parts[0] * parts[1] * parts[2] * np.dtype(dtype_var.get()).itemsize
+            if expected != file_size:
+                if not messagebox.askyesno(
+                        "Size mismatch",
+                        f"Shape {parts} × {dtype_var.get()} needs {expected:,} bytes "
+                        f"but file has {file_size:,} bytes.\nContinue anyway?",
+                        parent=dlg):
+                    return
+            result["shape"] = tuple(parts)
+            result["dtype"] = dtype_var.get()
+            dlg.destroy()
+        except ValueError as e:
+            messagebox.showwarning("Invalid input",
+                                   f"Enter three comma-separated integers.\n{e}", parent=dlg)
+
+    bf = tk.Frame(dlg)
+    bf.pack(pady=(8, 14))
+    tk.Button(bf, text="OK", width=10, command=_ok).pack(side="left", padx=6)
+    tk.Button(bf, text="Cancel", width=10, command=dlg.destroy).pack(side="left", padx=6)
+
+    dlg.update_idletasks()
+    try:
+        px = parent.winfo_rootx() + parent.winfo_width() // 2 - dlg.winfo_width() // 2
+        py = parent.winfo_rooty() + parent.winfo_height() // 2 - dlg.winfo_height() // 2
+        dlg.geometry(f"+{max(px, 0)}+{max(py, 0)}")
+    except tk.TclError:
+        pass
+    dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+    dlg.wait_window()
+    return result["shape"], result["dtype"]
+
+
 def ask_output_dir(parent):
     """Ask for an output folder; None -> keep current working directory."""
     d = filedialog.askdirectory(parent=parent,
                                 title="Choose a folder for the files this step will save")
     return d or None
+
+
+# Functions that always write files regardless of their parameters.
+_ALWAYS_SAVES = frozenset([
+    gen.BLOBS, gen.CYLINDERS, gen.OVERLAPPING_SPHERES,
+    gen.POLYDISPERSE_SPHERES, gen.PSEUDO_GRAVITY_PACKING, gen.VORONOI_EDGES,
+    psim.DRAINAGE, psim.IMBIBITION, psim.INJECTION,
+    met.REGIONPROPS_3D,
+    opnm.simulate_stokes_flow, opnm.simulate_fickian_diffusion,
+    opnm.simulate_advection_diffusion, opnm.simulate_drainage,
+    opnm.simulate_invasion_percolation,
+])
+
+# Default filename saved by each function (used to pre-fill the dialog and to rename).
+_FUNC_SAVE_FILE = {
+    gen.BLOBS: "Blobs.tif",
+    gen.CYLINDERS: "Cylinders.tif",
+    gen.OVERLAPPING_SPHERES: "Overlapping_Spheres.tif",
+    gen.POLYDISPERSE_SPHERES: "Polydisperse_Spheres.tif",
+    gen.PSEUDO_GRAVITY_PACKING: "Pseudo_Gravity_Packing.tif",
+    gen.VORONOI_EDGES: "Voronoi_Edges.tif",
+    met.CHORD_LENGTH_DISTRIBUTION: "chord_length_distribution.xlsx",
+    met.LINEAL_PATH_DISTRIBUTION: "lineal_path_distribution.xlsx",
+    met.PC_MAP_TO_PC_CURVE: "pc_map_to_pc_curve.xlsx",
+    met.PORE_SIZE_DISTRIBUTION: "pore_size_distribution.xlsx",
+    met.RADIAL_DENSITY_DISTRIBUTION: "radial_density_distribution.xlsx",
+    met.REGION_SURFACE_AREAS: "region_surface_areas.xlsx",
+    met.REGION_VOLUMES: "region_volumes.xlsx",
+    met.REGIONPROPS_3D: "regionprops_3D.xlsx",
+    psim.DRAINAGE: "drainage.vti",
+    psim.IMBIBITION: "imbibition.vti",
+    psim.INJECTION: "injection.vti",
+    opnm.simulate_stokes_flow: "stokes_flow.vtp",
+    opnm.simulate_fickian_diffusion: "fickian_diffusion.vtp",
+    opnm.simulate_advection_diffusion: "advection_diffusion.vtp",
+    opnm.simulate_drainage: "drainage.vtp",
+    opnm.simulate_invasion_percolation: "invasion_percolation.vtp",
+}
+
+
+def get_save_file(sec):
+    """Return the filename this section will write, or None if it won't save."""
+    func = sec.get("func")
+    if func in _ALWAYS_SAVES:
+        return _FUNC_SAVE_FILE.get(func)
+    if "save_excel" in sec.get("ff", {}):
+        try:
+            if sec["ff"]["save_excel"].get():
+                return _FUNC_SAVE_FILE.get(func)
+        except Exception:
+            pass
+    return None
+
+
+def needs_output_dir(sections):
+    """Return True if any section will write files to disk."""
+    return any(get_save_file(s) is not None for s in sections)
+
+
+def _filetypes_for(filename):
+    ext = os.path.splitext(filename)[1].lower() if filename else ""
+    if ext in (".tif", ".tiff"):
+        return [("TIFF image", "*.tif *.tiff"), ("All files", "*.*")]
+    if ext == ".xlsx":
+        return [("Excel spreadsheet", "*.xlsx"), ("All files", "*.*")]
+    if ext == ".vti":
+        return [("VTK ImageData", "*.vti"), ("All files", "*.*")]
+    if ext == ".vtp":
+        return [("VTK PolyData", "*.vtp"), ("All files", "*.*")]
+    return [("All files", "*.*")]
+
+
+def ask_save_file(parent, default_name):
+    """Native Save As dialog; returns (directory, filename) or (None, None)."""
+    path = filedialog.asksaveasfilename(
+        parent=parent,
+        initialfile=default_name,
+        defaultextension=os.path.splitext(default_name)[1] if default_name else "",
+        filetypes=_filetypes_for(default_name),
+        title="Save output file",
+    )
+    if not path:
+        return None, None
+    return os.path.dirname(path), os.path.basename(path)
+
+
+def _rename_saved(out_dir, default_name, chosen_name, subdir=None):
+    """Rename a file from its module-hardcoded default_name to chosen_name."""
+    target = (chosen_name or "").strip() or default_name
+    if not out_dir or not default_name or target == default_name:
+        return
+    base = os.path.join(out_dir, subdir) if subdir else out_dir
+    old = os.path.join(base, default_name)
+    new = os.path.join(base, target)
+    if os.path.exists(old):
+        try:
+            os.rename(old, new)
+        except OSError as e:
+            print(f"Warning: could not rename {default_name!r} → {target!r}: {e}")
 
 
 def run_operation(parent, title, func, kwargs, output_dir=None):
@@ -314,7 +511,7 @@ def run_operation(parent, title, func, kwargs, output_dir=None):
             overlay.destroy()
         except tk.TclError:
             pass
-    return ok, result, buf.getvalue().strip(), err
+    return ok, result, _ANSI_RE.sub('', buf.getvalue()).strip(), err
 
 
 def make_window(app, title, intro):
@@ -343,71 +540,84 @@ GEN_SPECS = [
     ("BLOBS", gen.BLOBS, [
         F("shape", "list_int", "100,100,100"),
         F("porosity", "float", "0.5"),
-        F("blobiness", "int", "1")]),
+        F("blobiness", "int", "1"),
+        F("invert", "bool", False)]),
     ("CYLINDERS", gen.CYLINDERS, [
         F("shape", "list_int", "100,100,100"),
         F("radius", "int", "2"),
         F("ncylinders", "int", "10"),
         F("porosity", "float", "0.5"),
-        F("cyl_length", "int_none", "")]),
+        F("cyl_length", "int_none", ""),
+        F("phi_max", "float", "90"),
+        F("theta_max", "float", "90"),
+        F("maxiter", "int", "10"),
+        F("invert", "bool", False)]),
     ("OVERLAPPING_SPHERES", gen.OVERLAPPING_SPHERES, [
         F("shape", "list_int", "100,100,100"),
         F("radius", "int", "5"),
         F("porosity", "float", "0.5"),
-        F("maxiter", "int", "10")]),
+        F("maxiter", "int", "10"),
+        F("invert", "bool", False)]),
     ("POLYDISPERSE_SPHERES", gen.POLYDISPERSE_SPHERES, [
         F("shape", "list_int", "100,100,100"),
         F("porosity", "float", "0.5"),
         F("r_min", "int", "4"),
-        F("nbins", "int", "3")]),
+        F("nbins", "int", "3"),
+        F("invert", "bool", False)]),
     ("PSEUDO_GRAVITY_PACKING", gen.PSEUDO_GRAVITY_PACKING, [
-        F("im", "list_int", "50,50,50", label="shape"),
-        F("radius", "int", "5"),
-        F("maxiter", "int", "500"),
+        F("shape", "list_int", "100,100,100"),
+        F("radius", "int", "3"),
+        F("maxiter", "int", "50"),
         F("clearance", "int", "0"),
-        F("pk_axis", "choice_int", "0", AXIS3)]),
+        F("pk_axis", "choice_int", "0", AXIS3),
+        F("invert", "bool", False)]),
     ("VORONOI_EDGES", gen.VORONOI_EDGES, [
         F("shape", "list_int", "100,100,100"),
         F("thickness", "int", "2"),
         F("ncells", "int", "10"),
-        F("flat_faces", "bool", True)]),
+        F("flat_faces", "bool", True),
+        F("invert", "bool", False)]),
 ]
 
-FILTER_SPECS = [
-    ("APPLY_CHORDS", filt.APPLY_CHORDS, [
-        F("spacing", "int", "1"), F("axis", "choice_int", "1", AXIS3),
-        F("trim_edges", "bool", False), F("label", "bool", True),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
-    ("APPLY_CHORDS_3D", filt.APPLY_CHORDS_3D, [
-        F("spacing", "int", "2"), F("trim_edges", "bool", True),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
-    ("FILL_CLOSED_PORES", filt.FILL_CLOSED_PORES, [
-        F("conn", "choice_int", "26", ["6", "26"]),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
-    ("FIND_DISCONNECTED_VOXELS", filt.FIND_DISCONNECTED_VOXELS, [
-        F("conn", "choice_str", "max", ["max", "min"]),
-        F("show_3d", "bool", True)]),
-    ("LOCAL_THICKNESS", filt.LOCAL_THICKNESS, [
-        F("sizes", "int", "10"),
-        F("method", "choice_str", "dt", ["dt", "conv", "bf", "imj"]),
-        F("divs", "int", "2"),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
-    ("POROSIMETRY", filt.POROSIMETRY, [
-        F("sizes", "int", "15"),
-        F("method", "choice_str", "dt", ["dt", "conv", "dsi"]),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True),
-        F("inv_axis", "choice_int_none", "None", AXIS_NONE)]),
-    ("REGION_SIZE", filt.REGION_SIZE, [
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
-    ("TRIM_DISCONNECTED_VOXELS", filt.TRIM_DISCONNECTED_VOXELS, [
-        F("conn", "choice_str", "max", ["max", "min"]),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
-    ("TRIM_FLOATING_SOLID", filt.TRIM_FLOATING_SOLID, [
-        F("conn", "choice_str", "max", ["max", "min"]),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
-    ("TRIM_NONPERCOLATING_PATHS", filt.TRIM_NONPERCOLATING_PATHS, [
-        F("perc_axis", "choice_int", "0", AXIS3),
-        F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+FILTER_GROUPS = [
+    ("Solid Altering Filters", [
+        ("FILL_CLOSED_PORES", filt.FILL_CLOSED_PORES, [
+            F("conn", "choice_int", "26", ["6", "26"]),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+        ("TRIM_DISCONNECTED_VOXELS", filt.TRIM_DISCONNECTED_VOXELS, [
+            F("conn", "choice_str", "max", ["max", "min"]),
+            F("inlet_faces", "choice_str", "all", ["all", "x0", "x1", "y0", "y1", "z0", "z1"]),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+        ("TRIM_FLOATING_SOLID", filt.TRIM_FLOATING_SOLID, [
+            F("conn", "choice_str", "max", ["max", "min"]),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+        ("TRIM_NONPERCOLATING_PATHS", filt.TRIM_NONPERCOLATING_PATHS, [
+            F("perc_axis", "choice_int", "0", AXIS3),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+    ]),
+    ("Non-Solid Altering Filters", [
+        ("APPLY_CHORDS", filt.APPLY_CHORDS, [
+            F("spacing", "int", "1"), F("axis", "choice_int", "1", AXIS3),
+            F("trim_edges", "bool", False), F("label", "bool", True),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+        ("APPLY_CHORDS_3D", filt.APPLY_CHORDS_3D, [
+            F("spacing", "int", "2"), F("trim_edges", "bool", True),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+        ("FIND_DISCONNECTED_VOXELS", filt.FIND_DISCONNECTED_VOXELS, [
+            F("conn", "choice_str", "max", ["max", "min"]),
+            F("show_3d", "bool", True)]),
+        ("LOCAL_THICKNESS", filt.LOCAL_THICKNESS, [
+            F("sizes", "int", "10"),
+            F("method", "choice_str", "dt", ["dt", "conv", "bf", "imj"]),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+        ("POROSIMETRY", filt.POROSIMETRY, [
+            F("sizes", "int", "15"),
+            F("method", "choice_str", "dt", ["dt", "conv", "dsi"]),
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True),
+            F("inv_axis", "choice_int_none", "None", AXIS_NONE)]),
+        ("REGION_SIZE", filt.REGION_SIZE, [
+            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+    ]),
 ]
 
 METRIC_SPECS = [
@@ -535,6 +745,7 @@ class App:
     def __init__(self, root):
         self.root = root
         self.image = None          # current working binary image (numpy bool array)
+        self.image_name = None     # base name used for filter output filenames
         self.pn = None             # cached OpenPNM network (built lazily)
         self.pn_image_id = None    # id() of the image the network was built from
 
@@ -568,13 +779,16 @@ class App:
         chooser.transient(self.root)
         tk.Label(chooser, text="Select the image source",
                  font=("Segoe UI", 12, "bold")).pack(pady=(18, 4))
-        tk.Label(chooser, text="A single 3D .tif file, or a folder of 2D .tif slices.",
+        tk.Label(chooser, text="A single 3D .tif or .raw file, or a folder of 2D .tif slices.",
                  fg="#555", wraplength=340).pack(pady=(0, 12))
 
         def pick_file():
             path = filedialog.askopenfilename(
-                parent=chooser, title="Select a 3D .tif image",
-                filetypes=[("TIFF image", "*.tif *.tiff"), ("All files", "*.*")])
+                parent=chooser, title="Select a 3D image file",
+                filetypes=[("3D image", "*.tif *.tiff *.raw"),
+                            ("TIFF image", "*.tif *.tiff"),
+                            ("Raw binary", "*.raw"),
+                            ("All files", "*.*")])
             if path:
                 chooser.destroy()
                 self._do_import(path, is_folder=False)
@@ -586,7 +800,7 @@ class App:
                 chooser.destroy()
                 self._do_import(path, is_folder=True)
 
-        tk.Button(chooser, text="Select 3D image file (.tif)", width=30,
+        tk.Button(chooser, text="Select 3D image file (.tif / .raw)", width=30,
                   command=pick_file).pack(pady=4)
         tk.Button(chooser, text="Select folder of 2D slices", width=30,
                   command=pick_folder).pack(pady=4)
@@ -594,6 +808,13 @@ class App:
     def _do_import(self, path, is_folder):
         import imageio.v2 as imageio
         from skimage.io import imread_collection
+
+        # --- .raw: ask for shape/dtype before loading -------------------
+        raw_shape, raw_dtype = None, None
+        if not is_folder and os.path.splitext(path)[1].lower() == ".raw":
+            raw_shape, raw_dtype = _ask_raw_params(self.root, os.path.getsize(path))
+            if raw_shape is None:
+                return  # user cancelled
 
         # --- load -------------------------------------------------------
         def _load():
@@ -603,6 +824,10 @@ class App:
                     raise ValueError("No .tif slices found in the selected folder.")
                 arr = np.stack(seq, axis=-1)
                 print(f"Loaded {len(seq)} slices via imread_collection: shape={arr.shape}")
+            elif raw_shape is not None:
+                arr = np.fromfile(path, dtype=np.dtype(raw_dtype)).reshape(raw_shape)
+                arr = np.transpose(arr, (1, 2, 0))   # (slices,H,W) → (H,W,slices)
+                print(f"Loaded .raw image: shape={arr.shape}, dtype={raw_dtype}")
             else:
                 arr = imageio.volread(path)
                 arr = np.transpose(arr, (1, 2, 0))
@@ -659,18 +884,21 @@ class App:
             fig.tight_layout()
             plt.show()
 
-        # --- save the binary image -------------------------------------
-        out_dir = ask_output_dir(self.root)
-        if out_dir:
-            try:
-                save_arr = np.transpose(np.array(~im_binary, dtype=np.int8), (2, 0, 1))
-                imageio.volsave(os.path.join(out_dir, "imported_binary_3D.tif"), save_arr)
-                messagebox.showinfo("Saved",
-                                    f"Binary image saved to:\n{out_dir}", parent=self.root)
-            except Exception as e:  # noqa: BLE001
-                messagebox.showwarning("Save warning", f"Could not save image:\n{e}",
-                                       parent=self.root)
+            # --- save the binary image (only when thresholding was needed) ----
+            out_dir = ask_output_dir(self.root)
+            if out_dir:
+                try:
+                    save_arr = np.transpose(np.array(~im_binary, dtype=np.int8), (2, 0, 1))
+                    imageio.volsave(os.path.join(out_dir, "imported_binary_3D.tif"), save_arr)
+                    messagebox.showinfo("Saved",
+                                        f"Binary image saved to:\n{out_dir}", parent=self.root)
+                except Exception as e:  # noqa: BLE001
+                    messagebox.showwarning("Save warning", f"Could not save image:\n{e}",
+                                           parent=self.root)
 
+        self.image_name = (os.path.basename(os.path.normpath(path))
+                           if is_folder
+                           else os.path.splitext(os.path.basename(path))[0])
         self.image = im_binary
         messagebox.showinfo("Import complete",
                             "Image imported. Continuing to the Filters step.",
@@ -704,11 +932,19 @@ class App:
             except ValueError as e:
                 messagebox.showerror("Invalid input", str(e), parent=win)
                 return
-            out_dir = ask_output_dir(win)
+            save_file = get_save_file(sec)
+            if save_file:
+                out_dir, chosen_name = ask_save_file(win, save_file)
+                if out_dir is None:
+                    return
+            else:
+                out_dir, chosen_name = None, None
             ok, result, out, err = run_operation(win, f"Generating {sec['title']}",
                                                   sec["func"], kwargs, output_dir=out_dir)
             if ok:
+                _rename_saved(out_dir, save_file, chosen_name)
                 self.image = result
+                self.image_name = sec['title'].capitalize()
                 self.pn = None  # invalidate any cached network
                 messagebox.showinfo("Done",
                                     f"{sec['title']} generated. Click Next to filter the image.",
@@ -716,26 +952,43 @@ class App:
             else:
                 messagebox.showerror("Generation failed", err, parent=win)
 
-        tk.Button(bar, text="Generate", width=14, command=do_generate).pack(side="left")
+        bar.columnconfigure(0, weight=1)
+        bar.columnconfigure(1, weight=1)
+        bar.columnconfigure(2, weight=1)
+        tk.Button(bar, text="← Previous", width=12,
+                  command=win.destroy).grid(row=0, column=0, sticky="w", padx=5)
+        tk.Button(bar, text="Generate", width=14, bg="#90EE90",
+                  command=do_generate).grid(row=0, column=1)
         tk.Button(bar, text="Next →", width=12,
-                  command=lambda: self.open_filters(win)).pack(side="right")
+                  command=lambda: self.open_filters(win)).grid(row=0, column=2, sticky="e", padx=5)
 
     # ---- Filters window --------------------------------------------------
     def open_filters(self, prev=None):
         if prev:
             prev.destroy()
+        total_filters = sum(len(specs) for _, specs in FILTER_GROUPS)
         win, body, bar = make_window(
             self, "Filters",
             "Filters are applied to the current image. To apply one or more filters, "
             "set a run order (1, 2, 3, ...) next to each filter you want; the image is "
             "passed through them in that order. Leave the order blank to skip a filter.")
-        order_values = [""] + [str(i) for i in range(1, len(FILTER_SPECS) + 1)]
+        order_values = [""] + [str(i) for i in range(1, total_filters + 1)]
         sections = []
-        for title, func, fields in FILTER_SPECS:
-            sec = build_section(body, title, fields, mode="order", order_values=order_values)
-            sec["func"] = func
-            sections.append(sec)
-        grid_sections(body, sections, 2)
+        for group_label, specs in FILTER_GROUPS:
+            tk.Label(body, text=group_label,
+                     font=("Segoe UI", 11, "bold"), fg="#1a1a1a",
+                     anchor="w").pack(fill="x", padx=10, pady=(10, 2))
+            ttk.Separator(body, orient="horizontal").pack(fill="x", padx=10, pady=(0, 4))
+            group_container = tk.Frame(body)
+            group_container.pack(fill="x")
+            group_secs = []
+            for title, func, fields in specs:
+                sec = build_section(group_container, title, fields,
+                                    mode="order", order_values=order_values)
+                sec["func"] = func
+                group_secs.append(sec)
+                sections.append(sec)
+            grid_sections(group_container, group_secs, 2)
 
         def do_filter():
             if not self.require_image(win):
@@ -752,7 +1005,14 @@ class App:
                                      "Each filter must have a unique run order.", parent=win)
                 return
             chosen.sort(key=lambda t: t[0])
-            # Filters don't write any files to disk, so no output folder is needed.
+
+            base = self.image_name or "image"
+            suffix = "_".join(s["title"].lower() for _, s in chosen)
+            default_name = f"{base}_{suffix}.tif"
+            out_dir, chosen_name = ask_save_file(win, default_name)
+            if out_dir is None:
+                return
+
             current = self.image
             for order, sec in chosen:
                 try:
@@ -768,13 +1028,30 @@ class App:
                     messagebox.showerror("Filter failed", f"{sec['title']}:\n{err}", parent=win)
                     return
                 current = result
+
+            import imageio.v2 as _iio
+            save_name = chosen_name or default_name
+            try:
+                arr = current.astype(np.uint8) if current.dtype == bool else current.astype(np.float32)
+                save_arr = np.transpose(arr, (2, 0, 1))
+                _iio.volsave(os.path.join(out_dir, save_name), save_arr)
+            except Exception as _e:
+                messagebox.showwarning("Save warning",
+                                       f"Could not save {save_name}:\n{_e}", parent=win)
+
             self.image = current
             self.pn = None
             messagebox.showinfo("Done", "Filtering complete. Click Next for metrics.", parent=win)
 
-        tk.Button(bar, text="Filter", width=14, command=do_filter).pack(side="left")
+        bar.columnconfigure(0, weight=1)
+        bar.columnconfigure(1, weight=1)
+        bar.columnconfigure(2, weight=1)
+        tk.Button(bar, text="← Previous", width=12,
+                  command=lambda: self.open_generators(win)).grid(row=0, column=0, sticky="w", padx=5)
+        tk.Button(bar, text="Filter", width=14, bg="#90EE90",
+                  command=do_filter).grid(row=0, column=1)
         tk.Button(bar, text="Next →", width=12,
-                  command=lambda: self.open_metrics(win)).pack(side="right")
+                  command=lambda: self.open_metrics(win)).grid(row=0, column=2, sticky="e", padx=5)
 
     # ---- Metrics window --------------------------------------------------
     def open_metrics(self, prev=None):
@@ -799,7 +1076,20 @@ class App:
             if not chosen:
                 messagebox.showwarning("Selection", "Tick at least one metric.", parent=win)
                 return
-            out_dir = ask_output_dir(win)
+            saving = [(s, get_save_file(s)) for s in chosen if get_save_file(s) is not None]
+            if not saving:
+                out_dir, name_map = None, {}
+            elif len(saving) == 1:
+                out_dir, chosen_name = ask_save_file(win, saving[0][1])
+                if out_dir is None:
+                    return
+                name_map = {saving[0][1]: chosen_name}
+            else:
+                out_dir = filedialog.askdirectory(parent=win,
+                                                  title="Choose a folder for the output files")
+                if not out_dir:
+                    return
+                name_map = {f: f for _, f in saving}
             for sec in chosen:
                 try:
                     kwargs = collect_kwargs(sec["ff"])
@@ -811,12 +1101,21 @@ class App:
                     win, f"Calculating {sec['title']}", sec["func"], kwargs, output_dir=out_dir)
                 if ok:
                     sec["result"].show(out or "Done (see plots / saved files).", ok=True)
+                    sf = get_save_file(sec)
+                    if sf and out_dir and sf in name_map:
+                        _rename_saved(out_dir, sf, name_map[sf])
                 else:
                     sec["result"].show(err, ok=False)
 
-        tk.Button(bar, text="Calculate", width=14, command=do_calculate).pack(side="left")
+        bar.columnconfigure(0, weight=1)
+        bar.columnconfigure(1, weight=1)
+        bar.columnconfigure(2, weight=1)
+        tk.Button(bar, text="← Previous", width=12,
+                  command=lambda: self.open_filters(win)).grid(row=0, column=0, sticky="w", padx=5)
+        tk.Button(bar, text="Calculate", width=14, bg="#90EE90",
+                  command=do_calculate).grid(row=0, column=1)
         tk.Button(bar, text="Next →", width=12,
-                  command=lambda: self.open_porespy(win)).pack(side="right")
+                  command=lambda: self.open_porespy(win)).grid(row=0, column=2, sticky="e", padx=5)
 
     # ---- PoreSpy simulations window -------------------------------------
     def open_porespy(self, prev=None):
@@ -840,7 +1139,20 @@ class App:
             if not chosen:
                 messagebox.showwarning("Selection", "Tick at least one simulation.", parent=win)
                 return
-            out_dir = ask_output_dir(win)
+            saving = [(s, get_save_file(s)) for s in chosen if get_save_file(s) is not None]
+            if not saving:
+                out_dir, name_map = None, {}
+            elif len(saving) == 1:
+                out_dir, chosen_name = ask_save_file(win, saving[0][1])
+                if out_dir is None:
+                    return
+                name_map = {saving[0][1]: chosen_name}
+            else:
+                out_dir = filedialog.askdirectory(parent=win,
+                                                  title="Choose a folder for the output files")
+                if not out_dir:
+                    return
+                name_map = {f: f for _, f in saving}
             for sec in chosen:
                 try:
                     kwargs = collect_kwargs(sec["ff"])
@@ -852,12 +1164,21 @@ class App:
                     win, f"Simulating {sec['title']}", sec["func"], kwargs, output_dir=out_dir)
                 if ok:
                     sec["result"].show(out or "Done (see plots / saved files).", ok=True)
+                    sf = get_save_file(sec)
+                    if sf and out_dir and sf in name_map:
+                        _rename_saved(out_dir, sf, name_map[sf])
                 else:
                     sec["result"].show(err, ok=False)
 
-        tk.Button(bar, text="Simulate", width=14, command=do_simulate).pack(side="left")
+        bar.columnconfigure(0, weight=1)
+        bar.columnconfigure(1, weight=1)
+        bar.columnconfigure(2, weight=1)
+        tk.Button(bar, text="← Previous", width=12,
+                  command=lambda: self.open_metrics(win)).grid(row=0, column=0, sticky="w", padx=5)
+        tk.Button(bar, text="Simulate", width=14, bg="#90EE90",
+                  command=do_simulate).grid(row=0, column=1)
         tk.Button(bar, text="Next →", width=12,
-                  command=lambda: self.open_openpnm(win)).pack(side="right")
+                  command=lambda: self.open_openpnm(win)).grid(row=0, column=2, sticky="e", padx=5)
 
     # ---- OpenPNM simulations window -------------------------------------
     def open_openpnm(self, prev=None):
@@ -912,7 +1233,20 @@ class App:
                 messagebox.showwarning("Selection", "Tick at least one simulation.", parent=win)
                 return
 
-            out_dir = ask_output_dir(win)
+            saving = [(s, get_save_file(s)) for s in chosen if get_save_file(s) is not None]
+            if not saving:
+                out_dir, name_map = None, {}
+            elif len(saving) == 1:
+                out_dir, chosen_name = ask_save_file(win, saving[0][1])
+                if out_dir is None:
+                    return
+                name_map = {saving[0][1]: chosen_name}
+            else:
+                out_dir = filedialog.askdirectory(parent=win,
+                                                  title="Choose a folder for the output files")
+                if not out_dir:
+                    return
+                name_map = {f: f for _, f in saving}
 
             # Build (or reuse) the pore network from the current image.
             if self.pn is None or self.pn_image_id != id(self.image):
@@ -943,11 +1277,21 @@ class App:
                     win, f"OpenPNM: {sec['title']}", func, kwargs, output_dir=out_dir)
                 if ok:
                     sec["result"].show(out or "Done (see saved VTK files).", ok=True)
+                    sf = get_save_file(sec)
+                    if sf and out_dir and sf in name_map:
+                        _rename_saved(out_dir, sf, name_map[sf], subdir="results_paraview")
                 else:
                     sec["result"].show(err, ok=False)
 
-        tk.Button(bar, text="Simulate", width=14, command=do_simulate).pack(side="left")
-        tk.Button(bar, text="Finish", width=12, command=win.destroy).pack(side="right")
+        bar.columnconfigure(0, weight=1)
+        bar.columnconfigure(1, weight=1)
+        bar.columnconfigure(2, weight=1)
+        tk.Button(bar, text="← Previous", width=12,
+                  command=lambda: self.open_porespy(win)).grid(row=0, column=0, sticky="w", padx=5)
+        tk.Button(bar, text="Simulate", width=14, bg="#90EE90",
+                  command=do_simulate).grid(row=0, column=1)
+        tk.Button(bar, text="Finish", width=12,
+                  command=win.destroy).grid(row=0, column=2, sticky="e", padx=5)
 
 
 def main():

@@ -12,103 +12,122 @@ np.random.seed(10)                      # eraze for randomly creating an object
 
 # YELLOW/TRUE = VOID/PORE, DARK BLUE/FALSE = SOLID
 
-def BLOBS(shape, porosity=0.5, blobiness=1):  #returns im
+def BLOBS(shape, porosity=0.5, blobiness=1, invert=False):  #returns im
     # When: pososity=None -> return: greyscale image
     # Interpolation is used for adding smoothness. im<0.5 converts greyscale to boolean
     # blobiness: integer/list, higher number -> more blobs
+    # invert: if True, inverts the image (pores become solid and vice versa)
 
     im = ps.generators.blobs(shape=shape, porosity=porosity, blobiness=blobiness)
-    # ax = plt.figure().add_subplot(projection='3d')                                  # For maneuverable plot !! takes a lot of time
-    # ax.voxels(im, edgecolor='none', linewidth=0.25)
-    fig, ax = plt.subplots(1, 1, figsize=[6, 6])                                    # For static plot
+    if invert:
+        im = ~im
+    fig, ax = plt.subplots(1, 1, figsize=[6, 6])
     ax.imshow(ps.visualization.show_3D(im), interpolation='none')
-
+    ax.set_title("BLOBS")
     plt.show()
+
     imageio.volsave("Blobs.tif", np.array(im.astype("uint8")))
     return im
 
-def CYLINDERS(shape, radius=2, ncylinders=10, porosity=0.5, cyl_length=None):   #returns im, ! Only 3D shapes
+
+def CYLINDERS(shape, radius=2, ncylinders=10, porosity=0.5, cyl_length=None, phi_max=90, theta_max=90, maxiter=10, invert=False):   #returns im
     # By controlling the number of cyliders
+    # radius: radius of cylinders
     # ncylinders: number of cyl
-    if ncylinders > 0:
-        im = ps.generators.cylinders(shape=shape, r = radius, ncylinders = ncylinders, length = cyl_length)
-
-    # By controlling the porosity
     # cyl_length: cylinder length
+    # phi_max: maximum angle of rotation around z-axis (default=90)
+    # theta_max: maximum angle of rotation around y-axis (default=90)
+    # maxiter: maximum number of iterations to match the desired porosity
+    # invert: if True, inverts the image (pores become solid and vice versa)
+
+    if cyl_length is not None:
+        im = ps.generators.cylinders(shape=shape, r = radius, porosity = porosity, length = cyl_length, phi_max=phi_max, theta_max=theta_max, maxiter=maxiter)    # By controlling the porosity
+
     else:
-        im = ps.generators.cylinders(shape=shape, r = radius, porosity = porosity, length = cyl_length)
-        print(f'Actual porosity is {im.sum()/im.size}')
+        im = ps.generators.cylinders(shape=shape, r = radius, ncylinders = ncylinders, length = cyl_length, phi_max=phi_max, theta_max=theta_max)
 
-    fig, ax = plt.subplots(1, 1, figsize=[6, 6])  
+    if invert:
+        im = ~im
+    fig, ax = plt.subplots(1, 1, figsize=[6, 6])
     ax.imshow(ps.visualization.show_3D(im), interpolation='none')
-    # ax = plt.figure().add_subplot(projection='3d')                  # this plot takes a lot of time for big shapes
-    # ax.voxels(~im, edgecolor='k', linewidth=0.25)
-
+    ax.set_title("CYLINDERS")
     plt.show()
+
     imageio.volsave("Cylinders.tif", np.array(im.astype("uint8")))
     return im
 
 
-def OVERLAPPING_SPHERES(shape, radius, porosity, maxiter=10):  #returns im
+def OVERLAPPING_SPHERES(shape, radius, porosity, maxiter=10, invert=False):  #returns im
     # r: controls size of spheres, maxiter: number of of iterations used to match the desired porosity default=10
+    # invert: if True, inverts the image (pores become solid and vice versa)
 
     im = ps.generators.overlapping_spheres(shape=shape, r = radius, porosity=porosity, maxiter=maxiter)
-    fig, ax = plt.subplots(1, 1, figsize=[4, 4])
+    if invert:
+        im = ~im
+    fig, ax = plt.subplots(1, 1, figsize=[6, 6])
     ax.imshow(ps.visualization.show_3D(im), interpolation='none')
+    ax.set_title("OVERLAPPING SPHERES")
     ax.axis(False)
     print('porosity = ', ps.metrics.porosity(im))
-
     plt.show()
+
     imageio.volsave("Overlapping_Spheres.tif", np.array(im.astype("uint8")))
     return im
 
 
-def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3):  #returns im
+def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3, invert=False):  #returns im
     # dist: statistical distribution of spheres diameters
     # nbins: number of discrete sphere sizes (default=5), r_min: smallest sphere to generate (default=5)
+    # invert: if True, inverts the image (pores become solid and vice versa)
 
     dist = spst.norm(loc=10, scale=5)
     im = ps.generators.polydisperse_spheres(shape=shape, porosity = porosity, nbins=nbins, r_min=r_min, dist=dist)
-    print(f'porosity = {im.sum()/im.size}')
+    if invert:
+        im = ~im
     fig, ax = plt.subplots(1, 1, figsize=[6, 6])
     ax.imshow(ps.visualization.show_3D(im), interpolation='none')
+    ax.set_title("POLYDISPERSE SPHERES")
     ax.axis(False)
-
     plt.show()
+    
     imageio.volsave("Polydisperse_Spheres.tif", np.array(im.astype("uint8")))
     return im
 
 
-def PSEUDO_GRAVITY_PACKING(im, radius, maxiter, clearance=0, pk_axis=0):  #returns packing
-    # im: can also be a list
-    # r: radius of spheres, # clearance: <0 for overlaping between spheres, # maxiter: maximum number of spheres to add
+def PSEUDO_GRAVITY_PACKING(shape, radius=3, maxiter=50, clearance=0, pk_axis=0, invert=False):  #returns im
+    # r: radius of spheres
+    # clearance: <0 for overlaping between spheres
+    # maxiter: maximum number of spheres to add
     # pk_axis: direction of gravity (default axis=0 -> x=0)
+    # invert: if True, inverts the image (pores become solid and vice versa)
 
-    if isinstance(im, list):
-        im = np.zeros(im, dtype=bool)
-        packing = ps.generators.pseudo_gravity_packing(im=~im, r=radius, maxiter=maxiter, clearance=clearance, axis=pk_axis)
-        fig, ax = plt.subplots(1, figsize=[8, 8])
-        ax.imshow(ps.visualization.show_3D(~packing), interpolation='none', origin='lower')
-        ax.axis(False)
-    else:
-        packing = ~ps.generators.pseudo_gravity_packing(im=im, r=radius, maxiter=maxiter, clearance=clearance, axis=pk_axis)
-        fig, ax = plt.subplots(1, figsize=[8, 8])
-        ax.imshow(ps.visualization.show_3D(packing), interpolation='none', origin='lower')
-        ax.axis(False)
+    im = ~ps.generators.pseudo_gravity_packing(shape=shape, r=radius, maxiter=maxiter, clearance=clearance, axis=pk_axis)
+    if invert:
+        im = ~im
+    fig, ax = plt.subplots(1, figsize=[6, 6])
+    ax.imshow(ps.visualization.show_3D(im), interpolation='none', origin='lower')
+    ax.set_title("PSEUDO GRAVITY PACKING")
+    ax.axis(False)
     plt.show()
-    imageio.volsave("Pseudo_Gravity_Packing.tif", np.array(packing.astype("uint8")))
-    return packing
+
+    imageio.volsave("Pseudo_Gravity_Packing.tif", np.array(im.astype("uint8")))
+    return im
 
 
-def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True):
+def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True, invert=False):  #returns im
     # ncells: number of cells
     # flat_faces = false : for edges to be true, r: thickness of edge (default=1)
+    # invert: if True, inverts the image (pores become solid and vice versa)
 
     im = ps.generators.voronoi_edges(shape=shape, r=thickness, ncells=ncells, flat_faces=flat_faces)
-    fig, ax = plt.subplots(figsize=[8, 8])
+    if invert:
+        im = ~im
+    fig, ax = plt.subplots(figsize=[6, 6])
     ax.imshow(ps.visualization.show_3D(~im), interpolation='none')          # remove ~ to make edges solid
+    ax.set_title("VORONOI EDGES")
     ax.axis(False)
-
     plt.show()
+
     imageio.volsave("Voronoi_Edges.tif", np.array(im.astype("uint8")))
     return im
+

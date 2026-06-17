@@ -11,41 +11,12 @@ import time
 from porespy.tools import randomize_colors
 import matplotlib.gridspec as gridspec
 import matplotlib.cm as cm
+np.random.seed(10)
 
 # YELLOW = TRUE = 1 = VOID/PORE // DARK BLUE = FALSE = 0 = SOLID
 
-def APPLY_CHORDS(im, spacing=1, axis=1, trim_edges=False, label=True, slice=0, show_slice=True):  # returns ac
-    # spacing: space between chords, axis: the axis along which chords are drawn, trim_edges: to remove edges that touch borders
-    # label: for chords in same voxel to have same colour
-    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
-    # show_slice: if True, displays the slice plot
-
-    ac = ps.filters.apply_chords(im=im, spacing=spacing, axis=axis, trim_edges=trim_edges, label=label)
-    if show_slice:
-        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
-        ps.visualization.imshow((ac), axis=slice, ind=int(im.shape[slice]/2))
-        plt.axis(False)
-        plt.show()
-    return ac
-
-
-def APPLY_CHORDS_3D(im, spacing=2, trim_edges=True, slice=0, show_slice=True):    # retuns ac3D
-    # spacing: space between chords, trim_edges: to remove edges that touch borders
-    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
-    # show_slice: if True, displays the slice plot
-
-    ac3D = ps.filters.apply_chords_3D(im=im, spacing=spacing, trim_edges=trim_edges)
-    ax_chords = 2                                              # which axis chords to show. 1 for x, 2 for y, 3 for z
-    if show_slice:
-        fig, ax = plt.subplots(1, 2, figsize=[12, 6])
-        ax[0].imshow((ac3D + ~im*4)[:, :, int(im.shape[slice]/2)])
-        ax[0].axis(False)
-        ax[1].imshow(ac3D[:, :, int(im.shape[slice]/2)] == ax_chords)
-        ax[1].axis(False)
-        plt.show()
-    return ac3D
-
-
+# Solid Altering Filters
+ 
 def FILL_CLOSED_PORES(im, conn=26, slice=0, show_slice=True): # returns im_filled_pores
     # conn:  how 'connected' a group of voxels must be. Options: '6', '26'
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
@@ -61,6 +32,125 @@ def FILL_CLOSED_PORES(im, conn=26, slice=0, show_slice=True): # returns im_fille
     return im_filled_pores
 
 
+def TRIM_DISCONNECTED_VOXELS(im, conn='max', inlet_faces='all', slice=0, show_slice=True): # returns trim_discon_voxels
+    # conn:        Options: max (when a corner is considered connection between voxels), min (when only face is a connection)
+    # inlet_faces: which faces act as inlets. Options: 'all' (default),'x0' first plane along x,'x1' last plane along x, 
+    #               'y0', 'y1', 'z0', 'z1', list of the above strings, e.g. ['x0', 'x1']
+    # slice:       according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice:  if True, displays the slice plot
+
+    if inlet_faces == 'all':
+        inlets = ps.generators.borders(shape=im.shape, mode="faces")
+    else:
+        if isinstance(inlet_faces, str):
+            inlet_faces = [inlet_faces]
+        inlets = np.zeros(im.shape, dtype=bool)
+        _s = np.s_[:]   # "select all" sentinel
+        face_map = {
+            'x0': (0,  _s, _s),
+            'x1': (-1, _s, _s),
+            'y0': (_s, 0,  _s),
+            'y1': (_s, -1, _s),
+            'z0': (_s, _s, 0),
+            'z1': (_s, _s, -1),
+        }
+        for face in inlet_faces:
+            if face not in face_map:
+                raise ValueError(f"Unknown inlet_face '{face}'. Choose from: 'all', 'x0', 'x1', 'y0', 'y1', 'z0', 'z1'.")
+            inlets[face_map[face]] = True
+
+    trim_discon_voxels = ps.filters.trim_disconnected_voxels(im=im, inlets=inlets, conn=conn)
+    if show_slice:
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
+        ps.visualization.imshow((trim_discon_voxels), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
+        plt.title("TRIM DISCONNECTED VOXELS")
+        plt.axis(False)
+        plt.show()
+    return trim_discon_voxels
+
+
+def TRIM_FLOATING_SOLID(im, conn='max', slice=0, show_slice=True): # returns trimed_im
+    # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection) 
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice: if True, displays the slice plot
+
+    trimed_im = ps.filters.trim_floating_solid(im=im, conn=conn)
+    if show_slice:
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
+        ps.visualization.imshow((trimed_im), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
+        plt.title("TRIM FLOATING SOLID")
+        plt.axis(False)
+        plt.show()
+    return trimed_im
+
+
+def TRIM_NONPERCOLATING_PATHS(im, perc_axis=0, slice=0, show_slice=True): # returns trimmed_paths
+    # perc_axis: axis of percolation
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice: if True, displays the slice plots
+
+    inlets = np.zeros_like(im)
+    outlets = np.zeros_like(im)
+    if perc_axis == 0:
+        inlets[0, :, :] = True
+        outlets[-1, :, :] = True
+    elif perc_axis == 1:
+        inlets[:, 0, :] = True
+        outlets[:, -1, :] = True
+    else:
+        inlets[:, :, 0] = True
+        outlets[:, :, -1] = True
+
+    trimmed_paths = ps.filters.trim_nonpercolating_paths(im=im, inlets=inlets, outlets=outlets)
+    if show_slice:
+        # ps.visualization.imshow() creates its own figure each call, so we don't pre-create any.
+        ps.visualization.imshow((trimmed_paths), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
+        plt.title("TRIM NONPERCOLATING PATHS")
+        plt.axis(False)
+        ps.visualization.imshow((trimmed_paths + (im != trimmed_paths)*0.5), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
+        plt.title("TRIM NONPERCOLATING PATHS - Comparison")
+        plt.axis(False)
+        plt.show()
+
+    return trimmed_paths
+
+# Non-Solid Altering Filters
+
+def APPLY_CHORDS(im, spacing=1, axis=1, trim_edges=False, label=True, slice=0, show_slice=True):  # returns ac
+    # spacing: space between chords, axis: the axis along which chords are drawn, trim_edges: to remove edges that touch borders
+    # label: for chords in same voxel to have same colour
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice: if True, displays the slice plot
+
+    ac = ps.filters.apply_chords(im=im, spacing=spacing, axis=axis, trim_edges=trim_edges, label=label)
+    if show_slice:
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
+        ps.visualization.imshow((ac), axis=slice, ind=int(im.shape[slice]/2))
+        plt.title("APPLY CHORDS")
+        plt.axis(False)
+        plt.show()
+    return ac
+
+
+def APPLY_CHORDS_3D(im, spacing=2, trim_edges=True, slice=0, show_slice=True):    # retuns ac3D
+    # spacing: space between chords, trim_edges: to remove edges that touch borders
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice: if True, displays the slice plot
+
+    ac3D = ps.filters.apply_chords_3D(im=im, spacing=spacing, trim_edges=trim_edges)
+    ax_chords = 2                                              # which axis chords to show. 1 for x, 2 for y, 3 for z
+    if show_slice:
+        fig, ax = plt.subplots(1, 2, figsize=[12, 6])
+        ax[0].imshow((ac3D + ~im*4)[:, :, int(im.shape[slice]/2)])
+        ax[0].set_title("APPLY CHORDS 3D")
+        ax[0].axis(False)
+        ax[1].imshow(ac3D[:, :, int(im.shape[slice]/2)] == ax_chords)
+        ax[1].set_title("APPLY CHORDS 3D - Selected Axis")
+        ax[1].axis(False)
+        plt.show()
+    return ac3D
+
+
 def FIND_DISCONNECTED_VOXELS(im, conn=max, show_3d=True): # retunrs discon_voxels
     # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection)
     # show_3d: if True, displays the 3D plot of the disconnected voxels
@@ -70,12 +160,13 @@ def FIND_DISCONNECTED_VOXELS(im, conn=max, show_3d=True): # retunrs discon_voxel
         fig, ax = plt.subplots(1, figsize=[6, 6])
         x1 = ps.visualization.show_3D(~discon_voxels)
         ax.imshow(x1)
+        ax.set_title("FIND DISCONNECTED VOXELS")
         ax.axis(False)
         plt.show()
     return discon_voxels
 
 
-def LOCAL_THICKNESS(im, sizes=10, method='dt', divs=2, slice=0, show_slice=True): # returns lt
+def LOCAL_THICKNESS(im, sizes=10, method='dt', slice=0, show_slice=True): # returns lt
     # sizes: number of classes to create
     # method: method used for classification, it only affects processing time. Options: 'dt' (default), 'conv', 'bf', 'imj'
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
@@ -85,6 +176,7 @@ def LOCAL_THICKNESS(im, sizes=10, method='dt', divs=2, slice=0, show_slice=True)
     if show_slice:
         # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow(lt/im, axis=slice, ind=int(im.shape[slice]/2))
+        plt.title("LOCAL THICKNESS")
         plt.axis(False)
         plt.show()
     return lt
@@ -116,13 +208,15 @@ def POROSIMETRY(im, sizes=15, method='dt', slice=0, show_slice=True, inv_axis=No
     if show_slice:
         # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow((pores/im), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
+        plt.title("POROSIMETRY")
         plt.axis(False)
 
     # Creating a cumulative histogram
     fig, ax = plt.subplots(1, figsize=[6, 6])
     ax.hist(pores[im], bins=sizes, cumulative=True, edgecolor='k', density=True, label='access limited')
-    ax.set_xlabel('pore radius in voxels')
-    ax.set_ylabel('fraction of pore volume smaller than stated size')
+    ax.set_title("POROSIMETRY")
+    ax.set_xlabel('Pore Radius In Voxels')
+    ax.set_ylabel('Fraction Of Pore Volume Smaller Than Stated Size')
 
     plt.show()
     return pores
@@ -134,66 +228,17 @@ def REGION_SIZE(im, slice=0, show_slice=True): # returns RS
 
     RS = ps.filters.region_size(im=im)
     if show_slice:
-        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
-        ps.visualization.imshow((RS), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        plt.axis(False)
+        ind = int(im.shape[slice] / 2)
+        if slice == 0:
+            plane = RS[ind, :, :]
+        elif slice == 1:
+            plane = RS[:, ind, :]
+        else:
+            plane = RS[:, :, ind]
+        fig, ax = plt.subplots(figsize=[6, 6])
+        ax.imshow(plane)
+        ax.set_title("REGION SIZE")
+        ax.axis(False)
         plt.show()
     return RS
 
-
-def TRIM_DISCONNECTED_VOXELS(im, conn='max', slice=0, show_slice=True): # returns trim_discon_voxels
-    # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection) 
-    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
-    # show_slice: if True, displays the slice plot
-
-    inlets = ps.tools.get_border(shape=im.shape, mode='faces')
-    trim_discon_voxels = ps.filters.trim_disconnected_voxels(im=im, inlets=inlets, conn=conn)
-    if show_slice:
-        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
-        ps.visualization.imshow((trim_discon_voxels), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        plt.axis(False)
-        plt.show()
-    return trim_discon_voxels
-
-
-def TRIM_FLOATING_SOLID(im, conn='max', slice=0, show_slice=True): # returns trimed_im
-    # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection) 
-    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
-    # show_slice: if True, displays the slice plot
-
-    trimed_im = ps.filters.trim_floating_solid(im=im, conn=conn)
-    if show_slice:
-        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
-        ps.visualization.imshow((trimed_im), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        plt.axis(False)
-        plt.show()
-    return trimed_im
-
-
-def TRIM_NONPERCOLATING_PATHS(im, perc_axis=0, slice=0, show_slice=True): # returns trimmed_paths
-    # perc_axis: axis of percolation
-    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
-    # show_slice: if True, displays the slice plots
-
-    inlets = np.zeros_like(im)
-    outlets = np.zeros_like(im)
-    if perc_axis == 0:
-        inlets[0, :, :] = True
-        outlets[-1, :, :] = True
-    elif perc_axis == 1:
-        inlets[:, 0, :] = True
-        outlets[:, -1, :] = True
-    else:
-        inlets[:, :, 0] = True
-        outlets[:, :, -1] = True
-
-    trimmed_paths = ps.filters.trim_nonpercolating_paths(im=im, inlets=inlets, outlets=outlets)
-    if show_slice:
-        # ps.visualization.imshow() creates its own figure each call, so we don't pre-create any.
-        ps.visualization.imshow((trimmed_paths), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        plt.axis(False)
-        ps.visualization.imshow((trimmed_paths + (im != trimmed_paths)*0.5), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
-        plt.axis(False)
-        plt.show()
-
-    return trimmed_paths

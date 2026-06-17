@@ -13,7 +13,7 @@ np.random.seed(10)
 
 # YELLOW = TRUE = 1 = VOID/PORE // DARK BLUE = FALSE = 0 = SOLID
 
-def BOND_NUMBER(im, g=9.81, sigma=0.01, delta_rho=1000, voxel_size=0.001, source='lt', method='median'): # returns bn
+def BOND_NUMBER(im, g=9.81, sigma=0.01, delta_rho=1000, voxel_size=1, source='lt', method='median'): # returns bn
     # im: binary image from Generators_3D
     # g: gravitational acceleration, default 9.81 m/s^2
     # sigma: surface tension, default 0.01 N/m
@@ -42,16 +42,18 @@ def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bi
 
         fig, ax = plt.subplots(1, figsize=[6, 6])
         ax.hist(cc, bins=bins)
-        ax.set_xlabel('chord length')
-        ax.set_ylabel('frequency')
+        ax.set_title("CHORD COUNTS")
+        ax.set_xlabel('Chord Length')
+        ax.set_ylabel('Frequency')
     else:
         chords = ps.filters.apply_chords(im=im, spacing=spacing, axis=axis, trim_edges=trim_edges, label=True)
         cc = ps.metrics.chord_counts(im=chords)
 
         fig, ax = plt.subplots(1, figsize=[6, 6])
         ax.hist(cc, bins=bins)
-        ax.set_xlabel('chord length along selected axis')
-        ax.set_ylabel('frequency')
+        ax.set_title("CHORD COUNTS")
+        ax.set_xlabel('Chord Length Along Selected Axis')
+        ax.set_ylabel('Frequency')
 
     plt.show()
     return cc
@@ -73,11 +75,17 @@ def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, normalizatio
 
     fig, ax = plt.subplots(1, 3, figsize=[12, 4])
     ax[0].plot(cld_data.L, cld_data.pdf)
-    ax[0].set_title("Probability Density Function")
+    ax[0].set_title("PROBABILITY DENSITY FUNCTION")
+    ax[0].set_xlabel("Chord Length")
+    ax[0].set_ylabel("Probability Density")
     ax[1].plot(cld_data.L, cld_data.cdf)
-    ax[1].set_title("Cumulative Density Function")
+    ax[1].set_title("CUMULATIVE DENSITY FUNCTION")
+    ax[1].set_xlabel("Chord Length")
+    ax[1].set_ylabel("Cumulative Density")
     ax[2].bar(cld_data.L, cld_data.cdf, cld_data.bin_widths, edgecolor='k')
-    ax[2].set_title('Bar Plot')
+    ax[2].set_title('BAR PLOT')
+    ax[2].set_xlabel("Chord Length")
+    ax[2].set_ylabel("Frequency")
 
     plt.show()
 
@@ -109,8 +117,9 @@ def FIND_H(im, srange=[0.01, 0.93], axis_of_intrusion=0, voxel_size=1, g=0, s=0.
 
     fig, ax = plt.subplots(1, figsize=[6, 6])
     ax.plot(s_prof.position, s_prof.saturation, 'b-o')
-    ax.set_xlabel("distance from injection face")
-    ax.set_ylabel("non-wetting phase saturation")
+    ax.set_title("FIND H")
+    ax.set_xlabel("Distance From Injection Face")
+    ax.set_ylabel("Non-Wetting Phase Saturation")
    
     h = ps.metrics.find_h(s_prof.saturation, s_prof.position, srange=srange)
     print(h)
@@ -153,11 +162,17 @@ def LINEAL_PATH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel=Fa
 
     fig, ax = plt.subplots(1, 3, figsize=[10, 4])
     ax[0].plot(lpd_data.L, lpd_data.pdf)
-    ax[0].set_title("Probability Density Function")
+    ax[0].set_title("PROBABILITY DENSITY FUNCTION")
+    ax[0].set_xlabel("Lineal Path Length")
+    ax[0].set_ylabel("Probability Density")
     ax[1].plot(lpd_data.L, lpd_data.cdf)
-    ax[1].set_title("Cumulative Density Function")
+    ax[1].set_title("CUMULATIVE DENSITY FUNCTION")
+    ax[1].set_xlabel("Lineal Path Length")
+    ax[1].set_ylabel("Cumulative Density")
     ax[2].bar(lpd_data.L, lpd_data.cdf, lpd_data.bin_widths, edgecolor='k')
-    ax[2].set_title('Bar Plot')
+    ax[2].set_title('BAR PLOT')
+    ax[2].set_xlabel("Lineal Path Length")
+    ax[2].set_ylabel("Frequency")
 
     plt.show()
 
@@ -201,17 +216,17 @@ def PC_MAP_TO_PC_CURVE(im, sigma=0.01, theta=180, voxel_size=1, steps=25, save_e
 
     fig, ax = plt.subplots(1, 3, figsize=[15, 5])
     ax[0].plot(pc_curve.pc, pc_curve.snwp, 'b-o')
-    ax[0].set_title('Plot diagram')
+    ax[0].set_title('PLOT DIAGRAM')
     ax[0].set_xlabel('Capillary Pressure [Pa]')
-    ax[0].set_ylabel('Non-wetting Phase Saturation')
+    ax[0].set_ylabel('Non-Wetting Phase Saturation')
     ax[1].step(pc_curve.pc, pc_curve.snwp, 'b-o', where='post')
-    ax[1].set_title('Step diagram')
+    ax[1].set_title('STEP DIAGRAM')
     ax[1].set_xlabel('Capillary Pressure [Pa]')
-    ax[1].set_ylabel('Non-wetting Phase Saturation')
+    ax[1].set_ylabel('Non-Wetting Phase Saturation')
     ax[2].semilogx(pc_curve.pc, pc_curve.snwp, 'r-o')
-    ax[2].set_title('Logarithmic CP')
+    ax[2].set_title('LOGARITHMIC CP')
     ax[2].set_xlabel('Capillary Pressure [Pa]')
-    ax[2].set_ylabel('Non-wetting Phase Saturation')
+    ax[2].set_ylabel('Non-Wetting Phase Saturation')
 
     plt.show()
 
@@ -247,17 +262,17 @@ def PORE_SIZE_DISTRIBUTION(im, bins=25, voxel_size=1, log=False, save_excel=Fals
 
     fig, ax = plt.subplots(1, 3, figsize=[15, 5])
     ax[0].plot(psd_data.bin_centers, psd_data.pdf)
-    ax[0].set_title("Probability Density Function")
-    ax[0].set_xlabel('pore radius in voxels')
-    ax[0].set_ylabel('frequency')
+    ax[0].set_title("PROBABILITY DENSITY FUNCTION")
+    ax[0].set_xlabel('Pore Radius In Voxels')
+    ax[0].set_ylabel('Frequency')
     ax[1].plot(psd_data.bin_centers, psd_data.cdf)
-    ax[1].set_title("Cumulative Density Function")
-    ax[1].set_xlabel('pore radius in voxels')
-    ax[1].set_ylabel('cumulative frequency')
+    ax[1].set_title("CUMULATIVE DENSITY FUNCTION")
+    ax[1].set_xlabel('Pore Radius In Voxels')
+    ax[1].set_ylabel('Cumulative Frequency')
     ax[2].bar(psd_data.bin_centers, psd_data.cdf, psd_data.bin_widths, edgecolor='k')
-    ax[2].set_title('Bar Plot')
-    ax[2].set_xlabel('pore radius in voxels')
-    ax[2].set_ylabel('cumulative frequency')
+    ax[2].set_title('BAR PLOT')
+    ax[2].set_xlabel('Pore Radius In Voxels')
+    ax[2].set_ylabel('Cumulative Frequency')
 
     plt.show()
 
@@ -290,8 +305,9 @@ def POROSITY_PROFILE(im, voxel_size=1):   # returns prfx, prfy, prfz
     ax.plot(prfy.position * voxel_size, prfy.porosity, 'r-', label='xz-plane', alpha=0.5)
     ax.plot(prfz.position * voxel_size, prfz.porosity, 'g-', label='xy-plane', alpha=0.5)
     ax.plot([0, 1], [ps.metrics.porosity(im=im), ps.metrics.porosity(im=im)], 'r--')
-    ax.set_ylabel('Porosity of slice')
-    ax.set_xlabel('Position of slice along given axis')
+    ax.set_title("POROSITY PROFILE")
+    ax.set_ylabel('Porosity Of Slice')
+    ax.set_xlabel('Position Of Slice Along Given Axis')
     ax.legend()
 
     fig, ax = plt.subplots(1, figsize=[6, 6])
@@ -299,8 +315,9 @@ def POROSITY_PROFILE(im, voxel_size=1):   # returns prfx, prfy, prfz
     ax.plot(prfy.position / prfy.position.max(), prfy.porosity, 'r-', label='xz-plane', alpha=0.5)
     ax.plot(prfz.position / prfz.position.max(), prfz.porosity, 'g-', label='xy-plane', alpha=0.5)
     ax.plot([0, 1], [ps.metrics.porosity(im=im), ps.metrics.porosity(im=im)], 'r--')
-    ax.set_ylabel('Porosity of slice')
-    ax.set_xlabel('Fractional distance along given axis')
+    ax.set_title("POROSITY PROFILE")
+    ax.set_ylabel('Porosity Of Slice')
+    ax.set_xlabel('Fractional Distance Along Given Axis')
     ax.legend()
 
     plt.show()
@@ -318,11 +335,17 @@ def RADIAL_DENSITY_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, save_excel
 
     fig, ax = plt.subplots(1, 3, figsize=[12, 4])
     ax[0].plot(rdd_data.bin_centers, rdd_data.pdf)
-    ax[0].set_title("Probability Density Function")
+    ax[0].set_title("PROBABILITY DENSITY FUNCTION")
+    ax[0].set_xlabel("Radial Distance")
+    ax[0].set_ylabel("Probability Density")
     ax[1].plot(rdd_data.bin_centers, rdd_data.cdf)
-    ax[1].set_title("Cumulative Density Function")
+    ax[1].set_title("CUMULATIVE DENSITY FUNCTION")
+    ax[1].set_xlabel("Radial Distance")
+    ax[1].set_ylabel("Cumulative Density")
     ax[2].bar(rdd_data.bin_centers, rdd_data.cdf, rdd_data.bin_widths, edgecolor='k')
-    ax[2].set_title('Bar Plot')
+    ax[2].set_title('BAR PLOT')
+    ax[2].set_xlabel("Radial Distance")
+    ax[2].set_ylabel("Frequency")
 
     plt.show()
 
@@ -353,18 +376,20 @@ def REGION_SURFACE_AREAS(im, voxel_size=1, strel_size=2, slice=0, save_excel=Fal
     ind = int(im.shape[slice]/2)
     if slice == 0:
         im_plot = ax[0].imshow((regions_sur)[ind, :, :], interpolation='none')
-        ax[0].set_title('YZ slice - Surface area of regions')
+        ax[0].set_title('YZ SLICE - SURFACE AREA OF REGIONS')
     elif slice == 1:
         im_plot = ax[0].imshow((regions_sur)[:, ind, :], interpolation='none')
-        ax[0].set_title('XZ slice - Surface area of regions')
+        ax[0].set_title('XZ SLICE - SURFACE AREA OF REGIONS')
     else:
         im_plot = ax[0].imshow((regions_sur)[:, :, ind], interpolation='none')
-        ax[0].set_title('XY slice - Surface area of regions')
+        ax[0].set_title('XY SLICE - SURFACE AREA OF REGIONS')
     fig.colorbar(im_plot, ax=ax[0], shrink=0.8)
     ax[0].axis(False)
 
     ax[1].hist(surface_areas, edgecolor='k')
-    ax[1].set_title("Probability Density Function")
+    ax[1].set_title("PROBABILITY DENSITY FUNCTION")
+    ax[1].set_xlabel("Surface Area")
+    ax[1].set_ylabel("Frequency")
 
     plt.show()
 
@@ -394,18 +419,20 @@ def REGION_VOLUMES(im, method='voxel', slice=0, save_excel=False):    # returns 
     ind = int(im.shape[slice]/2)
     if slice == 0:
         rgs = ax[0].imshow((regions_vol)[ind, :, :], interpolation='none')
-        ax[0].set_title('YZ slice - Volume of regions')
+        ax[0].set_title('YZ SLICE - VOLUME OF REGIONS')
     elif slice == 1:
         rgs = ax[0].imshow((regions_vol)[:, ind, :], interpolation='none')
-        ax[0].set_title('XZ slice - Volume of regions')
+        ax[0].set_title('XZ SLICE - VOLUME OF REGIONS')
     else:
         rgs = ax[0].imshow((regions_vol)[:, :, ind], interpolation='none')
-        ax[0].set_title('XY slice - Volume of regions')
+        ax[0].set_title('XY SLICE - VOLUME OF REGIONS')
     fig.colorbar(rgs, ax=ax[0], shrink=0.8)
     ax[0].axis(False)
 
     ax[1].hist(r_volumes, edgecolor='k')
-    ax[1].set_title("Probability Density Function")
+    ax[1].set_title("PROBABILITY DENSITY FUNCTION")
+    ax[1].set_xlabel("Volume")
+    ax[1].set_ylabel("Frequency")
 
     plt.show()
 
@@ -460,8 +487,9 @@ def REV_POROSITY(im, n=1000):  # returns rev_porosity
 
     fig, ax = plt.subplots(1, 1, figsize=[6, 6])
     ax.plot(rev_porosity.volume, rev_porosity.porosity, "r.")
-    ax.set_xlabel("volume")
-    ax.set_ylabel("porosity")
+    ax.set_title("REV POROSITY")
+    ax.set_xlabel("Volume")
+    ax.set_ylabel("Porosity")
 
     plt.show()
     return rev_porosity
@@ -494,10 +522,10 @@ def SATN_PROFILE(im, span=2, mode='tile', intr_axis=0, sigma=0.01, theta=180, g=
         sp = ps.metrics.satn_profile(satn=inv.im_snwp, s=s_value, span=span, mode=mode, axis=intr_axis)
         sp_list.append(sp)
         ax.plot(sp.position, sp.saturation, '-o', label=f's={s_value:.1f}')
-    ax.set_xlabel("distance from injection face")
-    ax.set_ylabel("non-wetting phase saturation")
+    ax.set_title("SATURATION PROFILE")
+    ax.set_xlabel("Distance From Injection Face")
+    ax.set_ylabel("Non-Wetting Phase Saturation")
     ax.legend()
 
     plt.show()
     return sp_list
-
