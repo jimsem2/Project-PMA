@@ -80,11 +80,13 @@ class FormField:
         s = str(self.var.get()).strip()
         if t in ("int_none",) and s == "":
             return None
+        if t == "float_none" and s == "":
+            return None
         if t == "choice_int_none" and s in ("", "None"):
             return None
         if t in ("int", "choice_int"):
             return int(s)
-        if t == "float":
+        if t in ("float", "float_none"):
             return float(s)
         if t == "list_int":
             return [int(x) for x in s.replace(";", ",").split(",") if x.strip() != ""]
@@ -360,7 +362,8 @@ def ask_output_dir(parent):
 # Functions that always write files regardless of their parameters.
 _ALWAYS_SAVES = frozenset([
     gen.BLOBS, gen.CYLINDERS, gen.OVERLAPPING_SPHERES,
-    gen.POLYDISPERSE_SPHERES, gen.PSEUDO_GRAVITY_PACKING, gen.VORONOI_EDGES,
+    gen.POLYDISPERSE_SPHERES, gen.PSEUDO_ELECTROSTATIC_PACKING,
+    gen.PSEUDO_GRAVITY_PACKING, gen.VORONOI_EDGES,
     psim.DRAINAGE, psim.IMBIBITION, psim.INJECTION,
     met.REGIONPROPS_3D,
     opnm.simulate_stokes_flow, opnm.simulate_fickian_diffusion,
@@ -374,6 +377,7 @@ _FUNC_SAVE_FILE = {
     gen.CYLINDERS: "Cylinders.tif",
     gen.OVERLAPPING_SPHERES: "Overlapping_Spheres.tif",
     gen.POLYDISPERSE_SPHERES: "Polydisperse_Spheres.tif",
+    gen.PSEUDO_ELECTROSTATIC_PACKING: "Pseudo_Electrostatic_Packing.tif",
     gen.PSEUDO_GRAVITY_PACKING: "Pseudo_Gravity_Packing.tif",
     gen.VORONOI_EDGES: "Voronoi_Edges.tif",
     met.CHORD_LENGTH_DISTRIBUTION: "chord_length_distribution.xlsx",
@@ -563,6 +567,15 @@ GEN_SPECS = [
         F("porosity", "float", "0.5"),
         F("r_min", "int", "4"),
         F("nbins", "int", "3"),
+        F("invert", "bool", False)]),
+    ("PSEUDO_ELECTROSTATIC_PACKING", gen.PSEUDO_ELECTROSTATIC_PACKING, [
+        F("shape", "list_int", "100,100,100"),
+        F("r", "int", "3"),
+        F("clearance", "int", "0"),
+        F("protrusion", "int", "0"),
+        F("maxiter", "int", "50"),
+        F("phi", "float_none", "", label="phi (opt.)"),
+        F("compactness", "float", "1"),
         F("invert", "bool", False)]),
     ("PSEUDO_GRAVITY_PACKING", gen.PSEUDO_GRAVITY_PACKING, [
         F("shape", "list_int", "100,100,100"),

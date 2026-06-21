@@ -18,6 +18,7 @@ def BLOBS(shape, porosity=0.5, blobiness=1, invert=False):  #returns im
     # blobiness: integer/list, higher number -> more blobs
     # invert: if True, inverts the image (pores become solid and vice versa)
 
+    np.random.seed(10)
     im = ps.generators.blobs(shape=shape, porosity=porosity, blobiness=blobiness)
     if invert:
         im = ~im
@@ -40,6 +41,7 @@ def CYLINDERS(shape, radius=2, ncylinders=10, porosity=0.5, cyl_length=None, phi
     # maxiter: maximum number of iterations to match the desired porosity
     # invert: if True, inverts the image (pores become solid and vice versa)
 
+    np.random.seed(10)
     if cyl_length is not None:
         im = ps.generators.cylinders(shape=shape, r = radius, porosity = porosity, length = cyl_length, phi_max=phi_max, theta_max=theta_max, maxiter=maxiter)    # By controlling the porosity
 
@@ -61,6 +63,7 @@ def OVERLAPPING_SPHERES(shape, radius, porosity, maxiter=10, invert=False):  #re
     # r: controls size of spheres, maxiter: number of of iterations used to match the desired porosity default=10
     # invert: if True, inverts the image (pores become solid and vice versa)
 
+    np.random.seed(10)
     im = ps.generators.overlapping_spheres(shape=shape, r = radius, porosity=porosity, maxiter=maxiter)
     if invert:
         im = ~im
@@ -80,6 +83,7 @@ def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3, invert=False):  
     # nbins: number of discrete sphere sizes (default=5), r_min: smallest sphere to generate (default=5)
     # invert: if True, inverts the image (pores become solid and vice versa)
 
+    np.random.seed(10)
     dist = spst.norm(loc=10, scale=5)
     im = ps.generators.polydisperse_spheres(shape=shape, porosity = porosity, nbins=nbins, r_min=r_min, dist=dist)
     if invert:
@@ -94,6 +98,35 @@ def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=4, nbins=3, invert=False):  
     return im
 
 
+def PSEUDO_ELECTROSTATIC_PACKING(shape, r=3, clearance=0, protrusion=0, maxiter=50, phi=None, compactness=1, invert=False):  #returns im
+    # r: radius of spheres
+    # clearance: <0 for overlaping between spheres
+    # maxiter: maximum number of spheres to add
+    # protrusion: amount by which spheres extend beyond the domain
+    # phi: solid volume fraction of the spheres. It overrides the maxiter parameter if provided when adds fewer spheres.
+    # compactness: controls the compactness of the packing. <1 for relaxed packing.
+    # invert: if True, inverts the image (pores become solid and vice versa)
+
+    np.random.seed(10)
+    im_sites = ps.generators.borders(shape=shape, mode="faces")
+    kwargs = dict(r=r, maxiter=maxiter, clearance=clearance, protrusion=protrusion, compactness=compactness)
+    if phi is not None:
+        kwargs['phi'] = phi
+    im = ps.generators.pseudo_electrostatic_packing(im=im_sites, **kwargs)
+    im = im & ~im_sites  # remove face borders; keep only spheres
+    im = ~im  # invert to make spheres solid
+    if invert:
+        im = ~im
+    fig, ax = plt.subplots(1, figsize=[6, 6])
+    ax.imshow(ps.visualization.show_3D(im), interpolation='none', origin='lower')
+    ax.set_title("PSEUDO ELECTROSTATIC PACKING")
+    ax.axis(False)
+    plt.show()
+
+    imageio.volsave("Pseudo_Electrostatic_Packing.tif", np.array(im.astype("uint8")))
+    return im
+
+
 def PSEUDO_GRAVITY_PACKING(shape, radius=3, maxiter=50, clearance=0, pk_axis=0, invert=False):  #returns im
     # r: radius of spheres
     # clearance: <0 for overlaping between spheres
@@ -101,6 +134,7 @@ def PSEUDO_GRAVITY_PACKING(shape, radius=3, maxiter=50, clearance=0, pk_axis=0, 
     # pk_axis: direction of gravity (default axis=0 -> x=0)
     # invert: if True, inverts the image (pores become solid and vice versa)
 
+    np.random.seed(10)
     im = ~ps.generators.pseudo_gravity_packing(shape=shape, r=radius, maxiter=maxiter, clearance=clearance, axis=pk_axis)
     if invert:
         im = ~im
@@ -119,6 +153,7 @@ def VORONOI_EDGES(shape, thickness, ncells, flat_faces = True, invert=False):  #
     # flat_faces = false : for edges to be true, r: thickness of edge (default=1)
     # invert: if True, inverts the image (pores become solid and vice versa)
 
+    np.random.seed(10)
     im = ps.generators.voronoi_edges(shape=shape, r=thickness, ncells=ncells, flat_faces=flat_faces)
     if invert:
         im = ~im
