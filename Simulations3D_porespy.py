@@ -15,11 +15,13 @@ def save_results_vtk(filename, im, res):
     Saves multiple fields in a single file: binary geometry, invasion sequence,
     non-wetting phase saturation, and capillary pressure.
     """
-    # pyevtk requires Fortran-ordered contiguous arrays
-    geometry = np.ascontiguousarray(im.astype(np.float64))
-    seq = np.ascontiguousarray(res.im_seq.astype(np.float64))
-    snwp = np.ascontiguousarray(res.im_snwp.astype(np.float64))
-    pc = np.ascontiguousarray(res.im_pc.astype(np.float64))
+    # pyevtk expects (nz, ny, nx) C-order; porespy images are (nx, ny, nz) → transpose
+    def _vtk(arr):
+        return np.ascontiguousarray(np.transpose(arr, (2, 0, 1)))
+    geometry = _vtk(im.astype(np.float64))
+    seq = _vtk(res.im_seq.astype(np.float64))
+    snwp = _vtk(res.im_snwp.astype(np.float64))
+    pc = _vtk(res.im_pc.astype(np.float64))
 
     pointData = {
         "geometry": geometry,
@@ -32,8 +34,9 @@ def save_results_vtk(filename, im, res):
     print(f"VTK file saved to: {filename}.vti")
 
 
-def plot_results(im, res, axis):
+def plot_results(im, res, axis, title=""):
     fig, ax = plt.subplots(1, 3, figsize=[15, 4])
+    fig.canvas.manager.set_window_title(title)
     if axis is None or axis == 0:
         h = ax[0].imshow((res.im_seq / im)[:, int(im.shape[1]/2), :])
         cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
@@ -88,7 +91,7 @@ def plot_results(im, res, axis):
         cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
         ax[2].axis(False)
         ax[2].set_title("(c) Capillary Pressure Map")
-    plt.show()
+    plt.show(block=False)
 
 
 def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_size=1e-4, axis=None, min_size=5, steps=None, save_excel=False):    # returns drn XLSX
@@ -124,17 +127,18 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
 
 
     save_results_vtk("drainage", im, drn)
-    plot_results(im, drn, axis)
+    plot_results(im, drn, axis, "DRAINAGE")
 
     # Plotting Saturation curve
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=drn.im_pc, mode='drainage')
 
     fig, ax = plt.subplots(figsize=[4, 4])
+    fig.canvas.manager.set_window_title("DRAINAGE - Saturation Curve")
     ax.semilogx(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('Capillary Pressure [Pa]')
     ax.set_ylabel('Non-Wetting Phase Saturation')
     ax.set_ylim([-0.05, 1.05])
-    plt.show()
+    plt.show(block=False)
 
     if save_excel:
         pd.DataFrame({'Capillary Pressure [Pa]': Pc, 'Non-Wetting Phase Saturation': Snwp}).to_excel('Drainage_Saturation_Curve.xlsx', index=False)
@@ -175,17 +179,18 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
         raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
     save_results_vtk("imbibition", im, imb)
-    plot_results(im, imb, axis)
+    plot_results(im, imb, axis, "IMBIBITION")
 
     # Plotting Saturation curve
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=imb.im_pc, mode='imbibition')
 
     fig, ax = plt.subplots(figsize=[4, 4])
+    fig.canvas.manager.set_window_title("IMBIBITION - Saturation Curve")
     ax.semilogx(Pc, Snwp, marker='o', markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('Capillary Pressure [Pa]')
     ax.set_ylabel('Non-Wetting Phase Saturation')
     ax.set_ylim([-0.05, 1.05])
-    plt.show()
+    plt.show(block=False)
 
     if save_excel:
         pd.DataFrame({'Capillary Pressure [Pa]': Pc, 'Non-Wetting Phase Saturation': Snwp}).to_excel('Imbibition_Saturation_Curve.xlsx', index=False)
@@ -194,7 +199,7 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
 
 
 def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_size=1e-4, axis=None, min_size=5,
-               conn='max', maxiter=500, method='qbip', save_excel=None):  # returns inj XLSX
+               conn='max', maxiter=200, method='qbip', save_excel=None):  # returns inj XLSX
     # im: 3D image of porous media
     # sigma: surface tension, default 0.01 N/m
     # theta: contact angle, default 180 degrees
@@ -205,7 +210,7 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     # axis: axis along which injection occurs, 0 for x, 1 for y, 2 for z, default None (injection occurs from all directions)
     # min_size: the number of clustered pixels below which are ignored as trapped, default 5 voxels
     # conn:  Options: max (when a corner is considered connection between voxels), min (when only face is a connection)
-    # maxiter: maximum number of iterations for the injection process, default 500
+    # maxiter: maximum number of iterations for the injection process, default 200
     # method: algorith used for finding the next voxel to be invaded, options: 'qbip' default (uses a binary heap, faster), 'ibip' (uses image analysis tools)
 
     pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
@@ -228,18 +233,19 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
         raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
     save_results_vtk("injection", im, inj)
-    plot_results(im, inj, axis)
+    plot_results(im, inj, axis, "INJECTION")
 
     # Plotting Saturation curve
     Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=inj.im_pc, seq=inj.im_seq, mode='drainage')
 
     fig, ax = plt.subplots(figsize=[4, 4])
+    fig.canvas.manager.set_window_title("INJECTION - Saturation Curve")
     ax.plot(np.log10(Pc), Snwp, markersize=6, linewidth=1, color='blue')
     ax.set_xlabel('log(Capillary Pressure [Pa])')
     ax.set_ylabel('Non-Wetting Phase Saturation')
     ax.set_xlim([None, None])
     ax.set_ylim([-0.05, 1.05])
-    plt.show()
+    plt.show(block=False)
 
     if save_excel:
         pd.DataFrame({'Capillary Pressure [Pa]': Pc, 'Non-Wetting Phase Saturation': Snwp}).to_excel('Injection_Saturation_Curve.xlsx', index=False)

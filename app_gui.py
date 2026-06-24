@@ -59,10 +59,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # ===========================================================================
 #  Form-field model + value parsing
 # ===========================================================================
-def F(name, ftype, default, choices=None, label=None):
+def F(name, ftype, default, choices=None, label=None, tooltip=None):
     """Create a field description used to build a form widget."""
     return {"name": name, "type": ftype, "default": default,
-            "choices": choices, "label": label or name}
+            "choices": choices, "label": label or name, "tooltip": tooltip}
 
 
 class FormField:
@@ -84,7 +84,7 @@ class FormField:
             return None
         if t == "choice_int_none" and s in ("", "None"):
             return None
-        if t in ("int", "choice_int"):
+        if t in ("int", "choice_int", "int_none"):
             return int(s)
         if t in ("float", "float_none"):
             return float(s)
@@ -100,11 +100,16 @@ def build_form(parent, fields):
     """Build a grid of labelled widgets; return {name: FormField}."""
     ff = {}
     for i, f in enumerate(fields):
-        tk.Label(parent, text=f["label"] + ":").grid(row=i, column=0, sticky="w", padx=4, pady=2)
+        lbl = tk.Label(parent, text=f["label"] + ":")
+        lbl.grid(row=i, column=0, sticky="w", padx=4, pady=2)
+        if f.get("tooltip"):
+            Tooltip(lbl, f["tooltip"])
         t = f["type"]
         if t == "bool":
             var = tk.BooleanVar(value=bool(f["default"]))
             tk.Checkbutton(parent, variable=var).grid(row=i, column=1, sticky="w")
+            lbl.configure(cursor="hand2")
+            lbl.bind("<Button-1>", lambda e, v=var: v.set(not v.get()))
         elif t.startswith("choice"):
             var = tk.StringVar(value=str(f["default"]))
             ttk.Combobox(parent, textvariable=var, values=f["choices"],
@@ -182,6 +187,35 @@ class ResultBox(tk.Frame):
         self._set(text if text else ("Done." if ok else "Error"))
 
 
+class Tooltip:
+    """Lemonchiffon hover label shown when the cursor rests on a widget."""
+
+    def __init__(self, widget, text):
+        self._widget = widget
+        self._text = text
+        self._win = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+
+    def _show(self, _event=None):
+        if self._win or not self._text:
+            return
+        x = self._widget.winfo_rootx() + 20
+        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 2
+        self._win = tw = tk.Toplevel(self._widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tk.Label(tw, text=self._text, background="lemonchiffon",
+                 relief="solid", borderwidth=1, wraplength=300,
+                 font=("Segoe UI", 9), justify="left",
+                 padx=5, pady=3).pack()
+
+    def _hide(self, _event=None):
+        if self._win:
+            self._win.destroy()
+            self._win = None
+
+
 class SingleSelect:
     """Group of checkboxes where ticking one unticks the others."""
 
@@ -232,7 +266,11 @@ def build_section(parent, title, fields, mode="multi", single=None,
                      state="readonly", width=4).pack(side="left", padx=(2, 0))
         sel["var"] = var
 
-    tk.Label(header, text=title, font=("Segoe UI", 10, "bold")).pack(side="left", padx=8)
+    title_lbl = tk.Label(header, text=title, font=("Segoe UI", 10, "bold"))
+    title_lbl.pack(side="left", padx=8)
+    if mode in ("single", "multi"):
+        title_lbl.configure(cursor="hand2")
+        title_lbl.bind("<Button-1>", lambda e, v=var: v.set(not v.get()))
     if subtitle:
         tk.Label(header, text=subtitle, fg="#777").pack(side="left")
 
@@ -474,8 +512,7 @@ def run_operation(parent, title, func, kwargs, output_dir=None):
     overlay.resizable(False, False)
     tk.Label(overlay, text=f"⏳  {title}",
              font=("Segoe UI", 12, "bold"), padx=30).pack(pady=(18, 4))
-    tk.Label(overlay, text="Processing... please wait.\n"
-                           "Close any pop-up plot windows to continue.",
+    tk.Label(overlay, text="Processing... please wait.",
              padx=30, justify="center").pack(pady=(0, 6))
     pb = ttk.Progressbar(overlay, mode="indeterminate", length=260)
     pb.pack(pady=(0, 16))
@@ -522,7 +559,7 @@ def make_window(app, title, intro):
     """Create a step window with a title, scrollable body and a bottom button bar."""
     win = tk.Toplevel(app.root)
     win.title(title)
-    win.geometry("960x780")
+    win.geometry("960x684")
     tk.Label(win, text=title, font=("Segoe UI", 14, "bold")).pack(pady=(10, 2))
     if intro:
         tk.Label(win, text=intro, fg="#555", wraplength=640, justify="left").pack(padx=12, pady=(0, 6))
@@ -542,212 +579,301 @@ XYZ = ["x", "y", "z"]
 
 GEN_SPECS = [
     ("BLOBS", gen.BLOBS, [
-        F("shape", "list_int", "100,100,100"),
-        F("porosity", "float", "0.5"),
-        F("blobiness", "int", "1"),
-        F("invert", "bool", False)]),
+        F("shape", "list_int", "100,100,100", tooltip="3D volume dimensions as 'x,y,z'"),
+        F("porosity", "float", "0.5", tooltip="Target fraction of void space"),
+        F("blobiness", "int", "1", tooltip="Higher value → more, smaller blobs"),
+        F("invert", "bool", False, tooltip="Swap pore and solid phases")]),
     ("CYLINDERS", gen.CYLINDERS, [
-        F("shape", "list_int", "100,100,100"),
-        F("radius", "int", "2"),
-        F("ncylinders", "int", "10"),
-        F("porosity", "float", "0.5"),
-        F("cyl_length", "int_none", ""),
-        F("phi_max", "float", "90"),
-        F("theta_max", "float", "90"),
-        F("maxiter", "int", "10"),
-        F("invert", "bool", False)]),
+        F("shape", "list_int", "100,100,100", tooltip="3D volume dimensions as 'x,y,z'"),
+        F("radius", "int", "4", tooltip="Cylinder radius (voxels)"),
+        F("ncylinders", "int", "25", tooltip="Number of cylinders to insert"),
+        F("porosity", "float", "0.5", tooltip="Target fraction of void space"),
+        F("cyl_length", "int_none", "", tooltip="Cylinder length (voxels); empty → spans full domain. When set, porosity controls insertion count"),
+        F("phi_max", "float", "90", tooltip="Max rotation around z-axis (degrees)"),
+        F("theta_max", "float", "90", tooltip="Max rotation around y-axis (degrees)"),
+        F("maxiter", "int", "10", tooltip="Max iterations to match target porosity"),
+        F("invert", "bool", False, tooltip="Swap pore and solid phases")]),
     ("OVERLAPPING_SPHERES", gen.OVERLAPPING_SPHERES, [
-        F("shape", "list_int", "100,100,100"),
-        F("radius", "int", "5"),
-        F("porosity", "float", "0.5"),
-        F("maxiter", "int", "10"),
-        F("invert", "bool", False)]),
+        F("shape", "list_int", "100,100,100", tooltip="3D volume dimensions as 'x,y,z'"),
+        F("radius", "int", "3", tooltip="Sphere radius (voxels)"),
+        F("porosity", "float", "0.5", tooltip="Target fraction of void space"),
+        F("maxiter", "int", "10", tooltip="Max iterations to match target porosity"),
+        F("invert", "bool", False, tooltip="Swap pore and solid phases")]),
     ("POLYDISPERSE_SPHERES", gen.POLYDISPERSE_SPHERES, [
-        F("shape", "list_int", "100,100,100"),
-        F("porosity", "float", "0.5"),
-        F("r_min", "int", "4"),
-        F("nbins", "int", "3"),
-        F("invert", "bool", False)]),
+        F("shape", "list_int", "100,100,100", tooltip="3D volume dimensions as 'x,y,z'"),
+        F("porosity", "float", "0.5", tooltip="Target fraction of void space"),
+        F("r_min", "int", "3", tooltip="Minimum sphere radius (voxels)"),
+        F("nbins", "int", "5", tooltip="Number of discrete sphere size classes"),
+        F("loc", "float", "10", tooltip="Mean of sphere size distribution; larger → bigger spheres"),
+        F("scale", "float", "5", tooltip="Std dev of size distribution; larger → more size variation"),
+        F("invert", "bool", False, tooltip="Swap pore and solid phases")]),
     ("PSEUDO_ELECTROSTATIC_PACKING", gen.PSEUDO_ELECTROSTATIC_PACKING, [
-        F("shape", "list_int", "100,100,100"),
-        F("r", "int", "3"),
-        F("clearance", "int", "0"),
-        F("protrusion", "int", "0"),
-        F("maxiter", "int", "50"),
-        F("phi", "float_none", "", label="phi (opt.)"),
-        F("compactness", "float", "1"),
-        F("invert", "bool", False)]),
+        F("shape", "list_int", "100,100,100", tooltip="3D volume dimensions as 'x,y,z'"),
+        F("r", "int", "3", tooltip="Sphere radius (voxels)"),
+        F("clearance", "int", "0", tooltip="Gap between spheres (voxels); negative → allow overlap"),
+        F("protrusion", "int", "0", tooltip="Max voxels spheres can extend beyond domain boundary"),
+        F("maxiter", "int", "500", tooltip="Max number of spheres to insert"),
+        F("phi", "float_none", "0.3", label="phi (opt.)", tooltip="Target solid volume fraction; overrides maxiter when set"),
+        F("compactness", "float", "0.5", tooltip="Packing tightness; <1 → looser packing"),
+        F("invert", "bool", False, tooltip="Swap pore and solid phases")]),
     ("PSEUDO_GRAVITY_PACKING", gen.PSEUDO_GRAVITY_PACKING, [
-        F("shape", "list_int", "100,100,100"),
-        F("radius", "int", "3"),
-        F("maxiter", "int", "50"),
-        F("clearance", "int", "0"),
-        F("pk_axis", "choice_int", "0", AXIS3),
-        F("invert", "bool", False)]),
+        F("shape", "list_int", "100,100,100", tooltip="3D volume dimensions as 'x,y,z'"),
+        F("r", "int", "5", tooltip="Sphere radius (voxels)"),
+        F("maxiter", "int", "200", tooltip="Max number of spheres to insert"),
+        F("clearance", "int", "0", tooltip="Gap between spheres (voxels); negative → allow overlap"),
+        F("pk_axis", "choice_int", "0", AXIS3, tooltip="Axis along which gravity acts"),
+        F("invert", "bool", False, tooltip="Swap pore and solid phases")]),
     ("VORONOI_EDGES", gen.VORONOI_EDGES, [
-        F("shape", "list_int", "100,100,100"),
-        F("thickness", "int", "2"),
-        F("ncells", "int", "10"),
-        F("flat_faces", "bool", True),
-        F("invert", "bool", False)]),
+        F("shape", "list_int", "100,100,100", tooltip="3D volume dimensions as 'x,y,z'"),
+        F("thickness", "int", "3", tooltip="Edge thickness (voxels)"),
+        F("ncells", "int", "50", tooltip="Number of Voronoi cells"),
+        F("flat_faces", "bool", True, tooltip="Make domain-face edges flat"),
+        F("invert", "bool", False, tooltip="Swap pore and solid phases")]),
 ]
+
+_TT_CONN_26 = "Voxel connectivity: 6 (face-adjacent only) or 26 (includes edges and corners)"
+_TT_CONN = "max = corners count as connections; min = faces only"
+_TT_SLICE = "Axis for the 2D visualization slice (0=x, 1=y, 2=z)"
+_TT_SHOW_SLICE = "Show the 2D slice visualization"
 
 FILTER_GROUPS = [
     ("Solid Altering Filters", [
         ("FILL_CLOSED_PORES", filt.FILL_CLOSED_PORES, [
-            F("conn", "choice_int", "26", ["6", "26"]),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("TRIM_DISCONNECTED_VOXELS", filt.TRIM_DISCONNECTED_VOXELS, [
-            F("conn", "choice_str", "max", ["max", "min"]),
-            F("inlet_faces", "choice_str", "all", ["all", "x0", "x1", "y0", "y1", "z0", "z1"]),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
+            F("inlet_faces", "choice_str", "all", ["all", "x0", "x1", "y0", "y1", "z0", "z1"],
+              tooltip="Faces used as inlets: all, x0/x1, y0/y1, z0/z1"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("TRIM_FLOATING_SOLID", filt.TRIM_FLOATING_SOLID, [
-            F("conn", "choice_str", "max", ["max", "min"]),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("TRIM_NONPERCOLATING_PATHS", filt.TRIM_NONPERCOLATING_PATHS, [
-            F("perc_axis", "choice_int", "0", AXIS3),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("perc_axis", "choice_int", "0", AXIS3, tooltip="Axis along which percolation is tested"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
     ]),
     ("Non-Solid Altering Filters", [
         ("APPLY_CHORDS", filt.APPLY_CHORDS, [
-            F("spacing", "int", "1"), F("axis", "choice_int", "1", AXIS3),
-            F("trim_edges", "bool", False), F("label", "bool", True),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("spacing", "int", "1", tooltip="Voxels between parallel chord lines"),
+            F("axis", "choice_int", "1", AXIS3, tooltip="Axis along which chords are drawn"),
+            F("trim_edges", "bool", False, tooltip="Remove chords that touch the domain boundary"),
+            F("label", "bool", True, tooltip="Assign a unique label to each chord"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("APPLY_CHORDS_3D", filt.APPLY_CHORDS_3D, [
-            F("spacing", "int", "2"), F("trim_edges", "bool", True),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("spacing", "int", "2", tooltip="Voxels between parallel chord lines"),
+            F("trim_edges", "bool", True, tooltip="Remove chords that touch the domain boundary"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("FIND_DISCONNECTED_VOXELS", filt.FIND_DISCONNECTED_VOXELS, [
-            F("conn", "choice_str", "max", ["max", "min"]),
-            F("show_3d", "bool", True)]),
+            F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
+            F("show_3d", "bool", True, tooltip="Show 3D visualization of disconnected voxels")]),
         ("LOCAL_THICKNESS", filt.LOCAL_THICKNESS, [
-            F("sizes", "int", "10"),
-            F("method", "choice_str", "dt", ["dt", "conv", "bf", "imj"]),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("sizes", "int", "10", tooltip="Number of size classes for the thickness map"),
+            F("method", "choice_str", "dt", ["dt", "conv", "bf", "imj"],
+              tooltip="Algorithm: dt (fastest), conv, bf, imj"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("POROSIMETRY", filt.POROSIMETRY, [
-            F("sizes", "int", "15"),
-            F("method", "choice_str", "dt", ["dt", "conv", "dsi"]),
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True),
-            F("inv_axis", "choice_int_none", "None", AXIS_NONE)]),
+            F("sizes", "int", "15", tooltip="Number of sphere diameters to test"),
+            F("method", "choice_str", "dt", ["dt", "conv", "dsi"],
+              tooltip="Algorithm: dt, conv, dsi"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE),
+            F("inv_axis", "choice_int_none", "None", AXIS_NONE,
+              tooltip="Invasion axis; None → invasion from all faces")]),
         ("REGION_SIZE", filt.REGION_SIZE, [
-            F("slice", "choice_int", "0", AXIS3), F("show_slice", "bool", True)]),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
     ]),
 ]
 
+_TT_VS = "Physical length of each voxel (m)"
+_TT_XL = "Export results to Excel"
+_TT_BINS = "Number of histogram bins"
+_TT_LOG = "Use logarithmic x-axis"
+_TT_SIGMA = "Fluid-fluid surface tension (N/m)"
+_TT_THETA = "Contact angle through invading phase (degrees)"
+_TT_G = "Gravitational acceleration (m/s²)"
+
 METRIC_SPECS = [
     ("BOND_NUMBER", met.BOND_NUMBER, [
-        F("g", "float", "9.81"), F("sigma", "float", "0.01"),
-        F("delta_rho", "float", "1000"), F("voxel_size", "float", "0.001"),
-        F("source", "choice_str", "lt", ["lt", "dt"]),
-        F("method", "choice_str", "median", ["mean", "median", "min", "max"])]),
+        F("g", "float", "9.81", tooltip=_TT_G),
+        F("sigma", "float", "0.01", tooltip=_TT_SIGMA),
+        F("delta_rho", "float", "1000", tooltip="Density difference between phases (kg/m³)"),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("source", "choice_str", "lt", ["lt", "dt"],
+          tooltip="Characteristic size source: lt = local thickness, dt = distance transform"),
+        F("method", "choice_str", "median", ["mean", "median", "min", "max"],
+          tooltip="Aggregation method applied to the characteristic size values")]),
     ("CHORD_COUNTS", met.CHORD_COUNTS, [
-        F("spacing", "int", "1"), F("trim_edges", "bool", True),
-        F("apply_chords3D", "bool", True), F("axis", "choice_int", "0", AXIS3),
-        F("bins", "int", "25")]),
+        F("spacing", "int", "1", tooltip="Voxels between parallel chord lines"),
+        F("trim_edges", "bool", True, tooltip="Remove chords touching domain boundary"),
+        F("apply_chords3D", "bool", True, tooltip="Use 3D chords; if False, uses 1D chords along axis"),
+        F("axis", "choice_int", "0", AXIS3, tooltip="Chord axis when apply_chords3D is False"),
+        F("bins", "int", "25", tooltip=_TT_BINS)]),
     ("CHORD_LENGTH_DISTRIBUTION", met.CHORD_LENGTH_DISTRIBUTION, [
-        F("bins", "int", "25"), F("log", "bool", False), F("voxel_size", "float", "1"),
-        F("normalization", "choice_str", "number", ["count", "number", "length"]),
-        F("apply_chords3D", "bool", True), F("axis", "choice_int", "0", AXIS3),
-        F("save_excel", "bool", False)]),
+        F("bins", "int", "25", tooltip=_TT_BINS),
+        F("log", "bool", False, tooltip=_TT_LOG),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("normalization", "choice_str", "number", ["count", "number", "length"],
+          tooltip="Bin height normalization: count, number, or length"),
+        F("apply_chords3D", "bool", True, tooltip="Use 3D chords; if False, uses 1D chords along axis"),
+        F("axis", "choice_int", "0", AXIS3, tooltip="Chord axis when apply_chords3D is False"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("FIND_H", met.FIND_H, [
-        F("srange", "list_float", "0.01,0.93"),
-        F("axis_of_intrusion", "choice_int", "0", AXIS3),
-        F("voxel_size", "float", "1"), F("g", "float", "0"), F("s", "float", "0.5")]),
+        F("srange", "list_float", "0.01,0.95",
+          tooltip="Saturation range [min,max] to search over"),
+        F("axis_of_intrusion", "choice_int", "0", AXIS3, tooltip="Axis along which fluid intrudes"),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("g", "float", "0", tooltip=_TT_G),
+        F("s", "float", "0.5", tooltip="Target global saturation at which to find h")]),
     ("FIND_POROSITY_THRESHOLD", met.FIND_POROSITY_THRESHOLD, [
-        F("axis", "choice_int", "0", AXIS3),
-        F("conn", "choice_str", "max", ["max", "min"])]),
+        F("axis", "choice_int", "0", AXIS3, tooltip="Percolation test axis"),
+        F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN)]),
     ("IS_PERCOLATING", met.IS_PERCOLATING, [
-        F("conn", "choice_str", "max", ["max", "min"])]),
+        F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN)]),
     ("LINEAL_PATH_DISTRIBUTION", met.LINEAL_PATH_DISTRIBUTION, [
-        F("bins", "int", "25"), F("log", "bool", False),
-        F("voxel_size", "float", "1"), F("save_excel", "bool", False)]),
-    ("MESH_SURFACE_AREA", met.MESH_SURFACE_AREA, []),
-    ("MESH_VOLUME", met.MESH_VOLUME, []),
+        F("bins", "int", "25", tooltip=_TT_BINS),
+        F("log", "bool", False, tooltip=_TT_LOG),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
+    ("MESH_SURFACE_AREA", met.MESH_SURFACE_AREA, [
+        F("voxel_size", "float", "1", tooltip=_TT_VS)]),
+    ("MESH_VOLUME", met.MESH_VOLUME, [
+        F("voxel_size", "float", "1", tooltip=_TT_VS)]),
     ("PC_MAP_TO_PC_CURVE", met.PC_MAP_TO_PC_CURVE, [
-        F("sigma", "float", "0.01"), F("theta", "float", "180"),
-        F("voxel_size", "float", "1"), F("steps", "int", "25"),
-        F("save_excel", "bool", False)]),
+        F("sigma", "float", "0.01", tooltip=_TT_SIGMA),
+        F("theta", "float", "180", tooltip=_TT_THETA),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("steps", "int", "25", tooltip="Number of capillary pressure levels to evaluate"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("PERCOLATING_POROSITY", met.PERCOLATING_POROSITY, [
-        F("conn", "choice_str", "max", ["max", "min"])]),
+        F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN)]),
     ("PORE_SIZE_DISTRIBUTION", met.PORE_SIZE_DISTRIBUTION, [
-        F("bins", "int", "25"), F("voxel_size", "float", "1"),
-        F("log", "bool", False), F("save_excel", "bool", False)]),
+        F("bins", "int", "25", tooltip=_TT_BINS),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("log", "bool", False, tooltip=_TT_LOG),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("POROSITY", met.POROSITY, []),
     ("POROSITY_PROFILE", met.POROSITY_PROFILE, [
-        F("voxel_size", "float", "1")]),
+        F("voxel_size", "float", "1", tooltip="Physical length of each voxel (µm)")]),
     ("RADIAL_DENSITY_DISTRIBUTION", met.RADIAL_DENSITY_DISTRIBUTION, [
-        F("bins", "int", "25"), F("log", "bool", False),
-        F("voxel_size", "float", "1"), F("save_excel", "bool", False)]),
+        F("bins", "int", "25", tooltip=_TT_BINS),
+        F("log", "bool", False, tooltip=_TT_LOG),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("REGION_SURFACE_AREAS", met.REGION_SURFACE_AREAS, [
-        F("voxel_size", "float", "1"), F("strel_size", "int", "2"),
-        F("slice", "choice_int", "0", AXIS3), F("save_excel", "bool", False)]),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("strel_size", "int", "2",
+          tooltip="Blurring element size; larger → smoother but less accurate surface"),
+        F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("REGION_VOLUMES", met.REGION_VOLUMES, [
-        F("method", "choice_str", "voxel", ["voxel", "marching_cubes"]),
-        F("slice", "choice_int", "0", AXIS3), F("save_excel", "bool", False)]),
+        F("method", "choice_str", "voxel", ["voxel", "marching_cubes"],
+          tooltip="Volume method: voxel (fast) or marching_cubes (more accurate)"),
+        F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("REGIONPROPS_3D", met.REGIONPROPS_3D, [
-        F("sphericity", "bool", False), F("solidity", "bool", False),
-        F("num_pixels", "bool", False)]),
+        F("sphericity", "bool", False, tooltip="Compute and output per-region sphericity"),
+        F("solidity", "bool", False, tooltip="Compute and output per-region solidity"),
+        F("num_pixels", "bool", False, tooltip="Include voxel count per region")]),
     ("REV_POROSITY", met.REV_POROSITY, [
-        F("n", "int", "1000")]),
+        F("n", "int", "1000", tooltip="Number of random sampling boxes")]),
     ("SATN_PROFILE", met.SATN_PROFILE, [
-        F("span", "int", "2"), F("mode", "choice_str", "tile", ["tile", "slide"]),
-        F("intr_axis", "choice_int", "0", AXIS3), F("sigma", "float", "0.01"),
-        F("theta", "float", "180"), F("g", "float", "0")]),
+        F("span", "int", "2", tooltip="Width of the averaging window (voxels)"),
+        F("mode", "choice_str", "tile", ["tile", "slide"],
+          tooltip="tile = non-overlapping windows; slide = overlapping windows"),
+        F("intr_axis", "choice_int", "0", AXIS3, tooltip="Axis along which fluid intrudes"),
+        F("sigma", "float", "0.01", tooltip=_TT_SIGMA),
+        F("theta", "float", "180", tooltip=_TT_THETA),
+        F("g", "float", "0", tooltip=_TT_G)]),
 ]
 
+_TT_RHO_NWP = "Non-wetting phase density (kg/m³)"
+_TT_RHO_WP = "Wetting phase density (kg/m³)"
+_TT_VS_SIM = "Physical length of each voxel (m)"
+_TT_AXIS_SIM = "Inlet/outlet axis; None → all faces"
+_TT_MIN_SIZE = "Minimum trapped cluster size to retain (voxels)"
+
 _DRAIN_IMB_FIELDS = [
-    F("sigma", "float", "0.01"), F("theta", "float", "180"), F("g", "float", "9.81"),
-    F("rho_nwp", "float", "1000"), F("rho_wp", "float", "0"),
-    F("voxel_size", "float", "1e-4"), F("axis", "choice_int_none", "None", AXIS_NONE),
-    F("min_size", "int", "5"), F("steps", "int_none", ""), F("save_excel", "bool", False),
+    F("sigma", "float", "0.01", tooltip=_TT_SIGMA),
+    F("theta", "float", "180", tooltip=_TT_THETA),
+    F("g", "float", "9.81", tooltip=_TT_G),
+    F("rho_nwp", "float", "1000", tooltip=_TT_RHO_NWP),
+    F("rho_wp", "float", "0", tooltip=_TT_RHO_WP),
+    F("voxel_size", "float", "1e-4", tooltip=_TT_VS_SIM),
+    F("axis", "choice_int_none", "None", AXIS_NONE, tooltip=_TT_AXIS_SIM),
+    F("min_size", "int", "5", tooltip=_TT_MIN_SIZE),
+    F("steps", "int_none", "", tooltip="Sequence map resolution; empty → all steps"),
+    F("save_excel", "bool", False, tooltip=_TT_XL),
 ]
 PSIM_SPECS = [
     ("DRAINAGE", psim.DRAINAGE, list(_DRAIN_IMB_FIELDS)),
     ("IMBIBITION", psim.IMBIBITION, list(_DRAIN_IMB_FIELDS)),
     ("INJECTION", psim.INJECTION, [
-        F("sigma", "float", "0.01"), F("theta", "float", "180"), F("g", "float", "9.81"),
-        F("rho_nwp", "float", "1000"), F("rho_wp", "float", "0"),
-        F("voxel_size", "float", "1e-4"), F("axis", "choice_int_none", "None", AXIS_NONE),
-        F("min_size", "int", "5"), F("conn", "choice_str", "max", ["max", "min"]),
-        F("maxiter", "int", "500"), F("method", "choice_str", "qbip", ["qbip", "ibip"]),
-        F("save_excel", "bool", False)]),
+        F("sigma", "float", "0.01", tooltip=_TT_SIGMA),
+        F("theta", "float", "180", tooltip=_TT_THETA),
+        F("g", "float", "9.81", tooltip=_TT_G),
+        F("rho_nwp", "float", "1000", tooltip=_TT_RHO_NWP),
+        F("rho_wp", "float", "0", tooltip=_TT_RHO_WP),
+        F("voxel_size", "float", "1e-4", tooltip=_TT_VS_SIM),
+        F("axis", "choice_int_none", "None", AXIS_NONE, tooltip=_TT_AXIS_SIM),
+        F("min_size", "int", "5", tooltip=_TT_MIN_SIZE),
+        F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
+        F("maxiter", "int", "200", tooltip="Maximum invasion iterations"),
+        F("method", "choice_str", "qbip", ["qbip", "ibip"],
+          tooltip="qbip = faster (binary heap); ibip = image-based"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("TORTUOSITY", psim.TORTUOSITY, [
-        F("axis", "choice_int", "0", AXIS3)]),
+        F("axis", "choice_int", "0", AXIS3, tooltip="Axis along which tortuosity is calculated")]),
 ]
 
 # OpenPNM phase property forms (only the properties relevant to each phase).
 PNM_PHASE_SPECS = [
     ("water", [
-        F("diffusivity", "float", "2.3e-9"),
-        F("viscosity", "float", "1.0e-3"),
-        F("contact_angle", "float", "110.0")]),
+        F("diffusivity", "float", "2.3e-9", tooltip="Molecular diffusivity (m²/s)"),
+        F("viscosity", "float", "1.0e-3", tooltip="Dynamic viscosity (Pa·s)"),
+        F("contact_angle", "float", "110.0", tooltip="Contact angle (degrees)")]),
     ("air", [
-        F("diffusivity", "float", "2.5e-5"),
-        F("viscosity", "float", "1.85e-5"),
-        F("contact_angle", "float", "120.0"),
-        F("surface_tension", "float", "0.072")]),
+        F("diffusivity", "float", "2.5e-5", tooltip="Molecular diffusivity (m²/s)"),
+        F("viscosity", "float", "1.85e-5", tooltip="Dynamic viscosity (Pa·s)"),
+        F("contact_angle", "float", "120.0", tooltip="Contact angle (degrees)"),
+        F("surface_tension", "float", "0.072", tooltip="Surface tension (N/m)")]),
     ("mercury", [
-        F("viscosity", "float", "1.53e-3"),
-        F("diffusivity", "float", "1.7e-9"),
-        F("surface_tension", "float", "0.485"),
-        F("contact_angle", "float", "140.0")]),
+        F("diffusivity", "float", "1.7e-9", tooltip="Molecular diffusivity (m²/s)"),
+        F("viscosity", "float", "1.53e-3", tooltip="Dynamic viscosity (Pa·s)"),
+        F("contact_angle", "float", "140.0", tooltip="Contact angle (degrees)"),
+        F("surface_tension", "float", "0.485", tooltip="Surface tension (N/m)")]),
 ]
 
 # OpenPNM simulations: only the requested subset of parameters per function.
 PNM_SIM_SPECS = [
     ("Stokes flow", opnm.simulate_stokes_flow, [
-        F("axis", "choice_str", "x", XYZ),
-        F("inlet_pressure", "float", "1.0"), F("outlet_pressure", "float", "0.0")]),
+        F("axis", "choice_str", "x", XYZ, tooltip="Axis along which pressure drop is applied"),
+        F("inlet_pressure", "float", "1.0", tooltip="Inlet pressure boundary condition"),
+        F("outlet_pressure", "float", "0.0", tooltip="Outlet pressure boundary condition")]),
     ("Fickian diffusion", opnm.simulate_fickian_diffusion, [
-        F("axis", "choice_str", "x", XYZ),
-        F("inlet_concentration", "float", "1.0"), F("outlet_concentration", "float", "0.0")]),
+        F("axis", "choice_str", "x", XYZ, tooltip="Axis along which concentration gradient is applied"),
+        F("inlet_concentration", "float", "1.0", tooltip="Inlet concentration boundary condition"),
+        F("outlet_concentration", "float", "0.0", tooltip="Outlet concentration boundary condition")]),
     ("Advection-diffusion", opnm.simulate_advection_diffusion, [
-        F("axis", "choice_str", "x", XYZ),
-        F("inlet_pressure", "float", "1.0"), F("outlet_pressure", "float", "0.0"),
-        F("inlet_concentration", "float", "1.0"), F("outlet_concentration", "float", "0.0")]),
+        F("axis", "choice_str", "x", XYZ, tooltip="Axis along which flow and diffusion occur"),
+        F("inlet_pressure", "float", "1.0", tooltip="Inlet pressure boundary condition"),
+        F("outlet_pressure", "float", "0.0", tooltip="Outlet pressure boundary condition"),
+        F("inlet_concentration", "float", "1.0", tooltip="Inlet concentration boundary condition"),
+        F("outlet_concentration", "float", "0.0", tooltip="Outlet concentration boundary condition")]),
     ("Drainage", opnm.simulate_drainage, [
-        F("axis", "choice_str", "x", XYZ), F("save_excel", "bool", False)]),
+        F("axis", "choice_str", "x", XYZ, tooltip="Axis along which invasion occurs"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("Invasion percolation", opnm.simulate_invasion_percolation, [
-        F("axis", "choice_str", "x", XYZ), F("save_excel", "bool", False)]),
+        F("axis", "choice_str", "x", XYZ, tooltip="Axis along which invasion occurs"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
 ]
 
 
@@ -757,10 +883,11 @@ PNM_SIM_SPECS = [
 class App:
     def __init__(self, root):
         self.root = root
-        self.image = None          # current working binary image (numpy bool array)
-        self.image_name = None     # base name used for filter output filenames
-        self.pn = None             # cached OpenPNM network (built lazily)
-        self.pn_image_id = None    # id() of the image the network was built from
+        self.image = None             # current working image (may be SA-filtered)
+        self.image_unfiltered = None  # image as it left the generator/import step
+        self.image_name = None        # base name used for filter output filenames
+        self.pn = None                # cached OpenPNM network (built lazily)
+        self.pn_image_id = None       # id() of the image the network was built from
 
     # ---- helpers ---------------------------------------------------------
     def require_image(self, parent):
@@ -852,12 +979,27 @@ class App:
             messagebox.showerror("Import failed", err, parent=self.root)
             return
 
+        base_name = (os.path.basename(os.path.normpath(path))
+                     if is_folder
+                     else os.path.splitext(os.path.basename(path))[0])
+        is_tif_source = (not is_folder and
+                         os.path.splitext(path)[1].lower() in ('.tif', '.tiff'))
+
         unique = np.unique(im3d)
-        if len(unique) <= 2:
+        already_binary = len(unique) <= 2
+        user_inverted = False
+
+        if already_binary:
             messagebox.showinfo("Import",
                                 f"Image is already binary (values {unique}).\n"
                                 "No thresholding needed.", parent=self.root)
             im_binary = im3d.astype(bool)
+            if messagebox.askyesno("Invert image",
+                                   "Do you want to invert the image?\n"
+                                   "(swaps pore and solid phases)",
+                                   parent=self.root):
+                im_binary = ~im_binary
+                user_inverted = True
         else:
             # --- denoise (slow) -----------------------------------------
             im_float = im3d.astype(np.float64)
@@ -889,30 +1031,43 @@ class App:
                 threshold = 0.5
             im_binary = denoised < threshold  # True = pore (void)
 
+            if messagebox.askyesno("Invert image",
+                                   "Do you want to invert the image?\n"
+                                   "(swaps pore and solid phases)",
+                                   parent=self.root):
+                im_binary = ~im_binary
+                user_inverted = True
+
             mid = im3d.shape[2] // 2
             fig, ax = plt.subplots(1, 3, figsize=[15, 5])
             ax[0].imshow(im3d[:, :, mid], cmap="gray"); ax[0].set_title("Original"); ax[0].axis("off")
             ax[1].imshow(denoised[:, :, mid], cmap="gray"); ax[1].set_title("Denoised"); ax[1].axis("off")
             ax[2].imshow(~im_binary[:, :, mid], cmap="gray"); ax[2].set_title("Binary"); ax[2].axis("off")
             fig.tight_layout()
-            plt.show()
+            plt.show(block=False)
 
-            # --- save the binary image (only when thresholding was needed) ----
-            out_dir = ask_output_dir(self.root)
+        # Save the result unless the source was already a binary .tif and
+        # the user did not invert (the original file already serves as the .tif).
+        skip_save = is_tif_source and already_binary and not user_inverted
+        if not skip_save:
+            default_name = f"{base_name}_binary.tif"
+            out_dir, chosen_name = ask_save_file(self.root, default_name)
             if out_dir:
+                save_name = chosen_name or default_name
                 try:
-                    save_arr = np.transpose(np.array(~im_binary, dtype=np.int8), (2, 0, 1))
-                    imageio.volsave(os.path.join(out_dir, "imported_binary_3D.tif"), save_arr)
+                    arr = np.transpose(im_binary.astype("uint8") * 255, (2, 0, 1))
+                    imageio.volsave(os.path.join(out_dir, save_name), arr)
                     messagebox.showinfo("Saved",
-                                        f"Binary image saved to:\n{out_dir}", parent=self.root)
+                                        f"Binary image saved as:\n"
+                                        f"{os.path.join(out_dir, save_name)}",
+                                        parent=self.root)
                 except Exception as e:  # noqa: BLE001
-                    messagebox.showwarning("Save warning", f"Could not save image:\n{e}",
-                                           parent=self.root)
+                    messagebox.showwarning("Save warning",
+                                           f"Could not save image:\n{e}", parent=self.root)
 
-        self.image_name = (os.path.basename(os.path.normpath(path))
-                           if is_folder
-                           else os.path.splitext(os.path.basename(path))[0])
+        self.image_name = base_name
         self.image = im_binary
+        self.image_unfiltered = im_binary
         messagebox.showinfo("Import complete",
                             "Image imported. Continuing to the Filters step.",
                             parent=self.root)
@@ -948,20 +1103,22 @@ class App:
             save_file = get_save_file(sec)
             if save_file:
                 out_dir, chosen_name = ask_save_file(win, save_file)
-                if out_dir is None:
-                    return
             else:
                 out_dir, chosen_name = None, None
+            # out_dir is None when the user cancels — generation still proceeds
             ok, result, out, err = run_operation(win, f"Generating {sec['title']}",
                                                   sec["func"], kwargs, output_dir=out_dir)
             if ok:
                 _rename_saved(out_dir, save_file, chosen_name)
                 self.image = result
+                self.image_unfiltered = result
                 self.image_name = sec['title'].capitalize()
                 self.pn = None  # invalidate any cached network
                 messagebox.showinfo("Done",
                                     f"{sec['title']} generated. Click Next to filter the image.",
                                     parent=win)
+                for s in sections:
+                    s["var"].set(False)
             else:
                 messagebox.showerror("Generation failed", err, parent=win)
 
@@ -979,15 +1136,24 @@ class App:
     def open_filters(self, prev=None):
         if prev:
             prev.destroy()
+        # Always start from the generated/imported image, never from a
+        # previously SA-filtered result (handles Back navigation correctly).
+        _original_image = self.image_unfiltered if self.image_unfiltered is not None else self.image
+
         total_filters = sum(len(specs) for _, specs in FILTER_GROUPS)
         win, body, bar = make_window(
             self, "Filters",
-            "Filters are applied to the current image. To apply one or more filters, "
-            "set a run order (1, 2, 3, ...) next to each filter you want; the image is "
-            "passed through them in that order. Leave the order blank to skip a filter.")
+            "Solid altering filters chain together in the order you set. "
+            "Non-solid altering filters each independently receive the solid-altering "
+            "result (or the original image if none were selected). "
+            "Set a run order (1, 2, 3, ...) to select a filter; leave blank to skip. "
+            "Tick 'Save file' on any non-solid filter to save its output as a separate .tif.")
         order_values = [""] + [str(i) for i in range(1, total_filters + 1)]
         sections = []
-        for group_label, specs in FILTER_GROUPS:
+        solid_sections = []
+        nonsolid_sections = []
+        for group_idx, (group_label, specs) in enumerate(FILTER_GROUPS):
+            is_nonsolid = (group_idx == 1)
             tk.Label(body, text=group_label,
                      font=("Segoe UI", 11, "bold"), fg="#1a1a1a",
                      anchor="w").pack(fill="x", padx=10, pady=(10, 2))
@@ -999,62 +1165,129 @@ class App:
                 sec = build_section(group_container, title, fields,
                                     mode="order", order_values=order_values)
                 sec["func"] = func
+                if is_nonsolid:
+                    save_var = tk.BooleanVar(value=False)
+                    save_row = tk.Frame(sec["frame"])
+                    save_row.pack(fill="x", padx=4, pady=(0, 2))
+                    tk.Checkbutton(save_row, text="Save file", variable=save_var).pack(side="left")
+                    sec["save_var"] = save_var
+                    nonsolid_sections.append(sec)
+                else:
+                    sec["save_var"] = None
+                    solid_sections.append(sec)
                 group_secs.append(sec)
                 sections.append(sec)
             grid_sections(group_container, group_secs, 2)
 
+        # When an order number is set on a filter, auto-clear any other filter
+        # that already holds the same number (last-set wins).
+        def _make_conflict_resolver(this_sec, all_secs):
+            def _resolve(*_):
+                val = this_sec["var"].get()
+                if not val:
+                    return
+                for other in all_secs:
+                    if other is not this_sec and other["var"].get() == val:
+                        other["var"].set("")
+            return _resolve
+
+        for _sec in sections:
+            _sec["var"].trace_add("write", _make_conflict_resolver(_sec, sections))
+
         def do_filter():
             if not self.require_image(win):
                 return
-            chosen = [(section_order(s), s) for s in sections if section_order(s) is not None]
-            if not chosen:
+            solid_chosen = sorted(
+                [(section_order(s), s) for s in solid_sections if section_order(s) is not None],
+                key=lambda t: t[0])
+            nonsolid_chosen = sorted(
+                [(section_order(s), s) for s in nonsolid_sections if section_order(s) is not None],
+                key=lambda t: t[0])
+
+            if not solid_chosen and not nonsolid_chosen:
                 messagebox.showinfo("No filters",
                                     "No run order set. The current image will be passed on unchanged.",
                                     parent=win)
                 return
-            orders = [o for o, _ in chosen]
-            if len(set(orders)) != len(orders):
-                messagebox.showerror("Order clash",
-                                     "Each filter must have a unique run order.", parent=win)
-                return
-            chosen.sort(key=lambda t: t[0])
 
-            base = self.image_name or "image"
-            suffix = "_".join(s["title"].lower() for _, s in chosen)
-            default_name = f"{base}_{suffix}.tif"
-            out_dir, chosen_name = ask_save_file(win, default_name)
-            if out_dir is None:
-                return
+            import imageio.v2 as _iio
 
-            current = self.image
-            for order, sec in chosen:
+            # Always start from the image captured when this window opened,
+            # so repeated Filter presses are independent of each other.
+            base = _original_image
+            for order, sec in solid_chosen:
                 try:
                     kwargs = collect_kwargs(sec["ff"])
                 except ValueError as e:
                     messagebox.showerror("Invalid input", f"{sec['title']}: {e}", parent=win)
                     return
-                kwargs["im"] = current
+                kwargs["im"] = base
                 ok, result, out, err = run_operation(
-                    win, f"Filtering: {sec['title']} (step {order})",
-                    sec["func"], kwargs)
+                    win, f"Filtering: {sec['title']} (step {order})", sec["func"], kwargs)
                 if not ok:
                     messagebox.showerror("Filter failed", f"{sec['title']}:\n{err}", parent=win)
                     return
-                current = result
+                base = result
+            # base is now the solid-altering result (or unchanged original if no SA filters)
 
-            import imageio.v2 as _iio
-            save_name = chosen_name or default_name
-            try:
-                arr = current.astype(np.uint8) if current.dtype == bool else current.astype(np.float32)
-                save_arr = np.transpose(arr, (2, 0, 1))
-                _iio.volsave(os.path.join(out_dir, save_name), save_arr)
-            except Exception as _e:
-                messagebox.showwarning("Save warning",
-                                       f"Could not save {save_name}:\n{_e}", parent=win)
+            # Determine the output directory
+            nsa_to_save = [s for _, s in nonsolid_chosen
+                           if s["save_var"] and s["save_var"].get()]
+            out_dir = None
 
-            self.image = current
+            if solid_chosen:
+                # Save As dialog for the solid-altering result
+                img_base = self.image_name or "image"
+                sa_suffix = "_".join(s["title"].lower() for _, s in solid_chosen)
+                default_name = f"{img_base}_{sa_suffix}.tif"
+                out_dir, chosen_name = ask_save_file(win, default_name)
+                if out_dir is None:
+                    return
+                save_name = chosen_name or default_name
+                try:
+                    arr = base.astype(np.uint8) * 255 if base.dtype == bool else base.astype(np.float32)
+                    _iio.volsave(os.path.join(out_dir, save_name),
+                                 np.transpose(arr, (2, 0, 1)))
+                except Exception as _e:
+                    messagebox.showwarning("Save warning",
+                                           f"Could not save {save_name}:\n{_e}", parent=win)
+            elif nsa_to_save:
+                # No SA filters but some NSA files need saving — ask for directory
+                out_dir = filedialog.askdirectory(
+                    parent=win, title="Choose a folder for the filter output files")
+                if not out_dir:
+                    return
+
+            # Run non-solid-altering filters independently; each receives `base` as input
+            for order, sec in nonsolid_chosen:
+                try:
+                    kwargs = collect_kwargs(sec["ff"])
+                except ValueError as e:
+                    messagebox.showerror("Invalid input", f"{sec['title']}: {e}", parent=win)
+                    continue
+                kwargs["im"] = base
+                ok, result, out, err = run_operation(
+                    win, f"Filtering: {sec['title']} (step {order})", sec["func"], kwargs)
+                if not ok:
+                    messagebox.showerror("Filter failed", f"{sec['title']}:\n{err}", parent=win)
+                    continue
+                if sec["save_var"] and sec["save_var"].get() and out_dir is not None:
+                    nsa_name = f"{self.image_name or 'image'}_{sec['title'].lower()}.tif"
+                    try:
+                        arr = (result.astype(np.uint8) * 255 if result.dtype == bool
+                               else result.astype(np.float32))
+                        _iio.volsave(os.path.join(out_dir, nsa_name),
+                                     np.transpose(arr, (2, 0, 1)))
+                    except Exception as _e:
+                        messagebox.showwarning("Save warning",
+                                               f"Could not save {nsa_name}:\n{_e}", parent=win)
+
+            # self.image is the solid-altering result only (or original if no SA filters)
+            self.image = base
             self.pn = None
             messagebox.showinfo("Done", "Filtering complete. Click Next for metrics.", parent=win)
+            for s in sections:
+                s["var"].set("")
 
         bar.columnconfigure(0, weight=1)
         bar.columnconfigure(1, weight=1)
@@ -1119,6 +1352,8 @@ class App:
                         _rename_saved(out_dir, sf, name_map[sf])
                 else:
                     sec["result"].show(err, ok=False)
+            for s in sections:
+                s["var"].set(False)
 
         bar.columnconfigure(0, weight=1)
         bar.columnconfigure(1, weight=1)
@@ -1182,6 +1417,8 @@ class App:
                         _rename_saved(out_dir, sf, name_map[sf])
                 else:
                     sec["result"].show(err, ok=False)
+            for s in sections:
+                s["var"].set(False)
 
         bar.columnconfigure(0, weight=1)
         bar.columnconfigure(1, weight=1)
@@ -1295,6 +1532,10 @@ class App:
                         _rename_saved(out_dir, sf, name_map[sf], subdir="results_paraview")
                 else:
                     sec["result"].show(err, ok=False)
+            for s in sim_secs:
+                s["var"].set(False)
+            for s in phase_secs.values():
+                s["var"].set(False)
 
         bar.columnconfigure(0, weight=1)
         bar.columnconfigure(1, weight=1)

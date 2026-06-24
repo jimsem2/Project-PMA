@@ -104,9 +104,9 @@ def select_phase(network=None, phase_name='water', diffusivity=None, viscosity=N
         # Air phase lacks surface tension and contact angle. Use water-air
         # interfacial tension (~0.072 N/m) and assume air is the non-wetting
         # phase with contact angle 0° (measured through the invading phase).
-        phase["pore.surface_tension"] = 0.072 if surface_tension is None else surface_tension  # N/m
         phase["pore.diffusivity"] = 2.5e-5 if diffusivity is None else diffusivity     # m^2/s (25 °C)
         phase["pore.contact_angle"] = 120.0 if contact_angle is None else contact_angle    # degrees
+        phase["pore.surface_tension"] = 0.072 if surface_tension is None else surface_tension  # N/m
     elif phase_name == "mercury":
         phase = op.phase.Mercury(network=network)
         # Add constant viscosity for mercury (less sensitive to temperature)
@@ -114,8 +114,8 @@ def select_phase(network=None, phase_name='water', diffusivity=None, viscosity=N
         # Mercury phase doesn't define diffusivity by default.
         phase["pore.diffusivity"] = 1.7e-9 if diffusivity is None else diffusivity  # m^2/s (approx.)
         # Mercury intrusion: surface tension ~0.485 N/m, contact angle ~140°
-        phase["pore.surface_tension"] = 0.485 if surface_tension is None else surface_tension
         phase["pore.contact_angle"] = 140.0 if contact_angle is None else contact_angle
+        phase["pore.surface_tension"] = 0.485 if surface_tension is None else surface_tension
     else:
         raise ValueError(f"Unknown phase '{phase_name}'. Choose 'water', 'air', or 'mercury'.")
 
@@ -353,7 +353,7 @@ def simulate_drainage(network=None, inv_phase='air', def_phase='water', axis="x"
     ax.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "drainage_saturation_curve.png"), dpi=150)
-    plt.show()
+    plt.show(block=False)
     print(f"Drainage saturation curve saved to '{output_dir}/drainage_saturation_curve.png'")
 
     # Save saturation curve data to Excel if requested
@@ -407,7 +407,7 @@ def simulate_invasion_percolation(network=None, inv_phase='air', def_phase='wate
     ax.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "invasion_percolation_saturation_curve.png"), dpi=150)
-    plt.show()
+    plt.show(block=False)
     print(f"IP saturation curve saved to '{output_dir}/invasion_percolation_saturation_curve.png'")
 
     # Save saturation curve data to Excel if requested
