@@ -217,7 +217,6 @@ def POROSIMETRY(im, sizes=15, method='dt', inv_axis=None, slice=0, show_slice=Tr
         prsm = ps.filters.porosimetry(im=im, sizes=sizes, method=method)
 
     if show_slice:
-        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
         ps.visualization.imshow((prsm/im), axis=slice, ind=int(im.shape[slice]/2), interpolation='none')
         plt.gcf().canvas.manager.set_window_title("POROSIMETRY")
         plt.title("POROSIMETRY")
@@ -255,4 +254,28 @@ def REGION_SIZE(im, slice=0, show_slice=True): # returns RS
         ax.axis(False)
         plt.show(block=False)
     return RS
+
+def SNOW2_REGIONS(im, voxel_size=1, slice=0, show_slice=True): # returns regions
+    # voxel_size: physical length of each voxel (m) — passed to snow2 for network geometry
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice: if True, displays the slice plot
+        
+    snow2 = ps.networks.snow2(phases=im, voxel_size=voxel_size, boundary_width=0)
+    regions = snow2.regions
+    if show_slice:
+        ind = int(im.shape[slice] / 2)
+        if slice == 0:
+            plane = regions[ind, :, :]
+        elif slice == 1:
+            plane = regions[:, ind, :]
+        else:
+            plane = regions[:, :, ind]
+        fig, ax = plt.subplots(figsize=[6, 6])
+        fig.canvas.manager.set_window_title("SNOW2 REGIONS")
+        ax.imshow(plane)
+        ax.set_title("SNOW2 REGIONS")
+        ax.axis(False)
+        plt.show(block=False)
+
+    return regions
 

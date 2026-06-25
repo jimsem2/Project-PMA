@@ -84,7 +84,7 @@ class FormField:
             return None
         if t == "choice_int_none" and s in ("", "None"):
             return None
-        if t in ("int", "choice_int", "int_none"):
+        if t in ("int", "choice_int", "int_none", "choice_int_none"):
             return int(s)
         if t in ("float", "float_none"):
             return float(s)
@@ -690,6 +690,10 @@ FILTER_GROUPS = [
         ("REGION_SIZE", filt.REGION_SIZE, [
             F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
             F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
+        ("SNOW2_REGIONS", filt.SNOW2_REGIONS, [
+            F("voxel_size", "float", "1", tooltip="Physical length of each voxel (m) — used by snow2 for pore geometry"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
     ]),
 ]
 
@@ -811,7 +815,7 @@ _DRAIN_IMB_FIELDS = [
     F("axis", "choice_int_none", "None", AXIS_NONE, tooltip=_TT_AXIS_SIM),
     F("min_size", "int", "5", tooltip=_TT_MIN_SIZE),
     F("steps", "int_none", "", tooltip="Sequence map resolution; empty → all steps"),
-    F("save_excel", "bool", False, tooltip=_TT_XL),
+    F("save_excel", "bool", False, tooltip="Export capillary pressure–saturation curve to Excel"),
 ]
 PSIM_SPECS = [
     ("DRAINAGE", psim.DRAINAGE, list(_DRAIN_IMB_FIELDS)),
@@ -829,7 +833,7 @@ PSIM_SPECS = [
         F("maxiter", "int", "200", tooltip="Maximum invasion iterations"),
         F("method", "choice_str", "qbip", ["qbip", "ibip"],
           tooltip="qbip = faster (binary heap); ibip = image-based"),
-        F("save_excel", "bool", False, tooltip=_TT_XL)]),
+        F("save_excel", "bool", False, tooltip="Export capillary pressure–saturation curve to Excel")]),
     ("TORTUOSITY", psim.TORTUOSITY, [
         F("axis", "choice_int", "0", AXIS3, tooltip="Axis along which tortuosity is calculated")]),
 ]
@@ -888,6 +892,7 @@ class App:
         self.image_name = None        # base name used for filter output filenames
         self.pn = None                # cached OpenPNM network (built lazily)
         self.pn_image_id = None       # id() of the image the network was built from
+        self.pn_voxel_size = None     # voxel_size used to build the cached network
 
     # ---- helpers ---------------------------------------------------------
     def require_image(self, parent):
@@ -1050,7 +1055,12 @@ class App:
         # the user did not invert (the original file already serves as the .tif).
         skip_save = is_tif_source and already_binary and not user_inverted
         if not skip_save:
-            default_name = f"{base_name}_binary.tif"
+            if already_binary:
+                default_name = f"{base_name}_inverted.tif"
+            elif user_inverted:
+                default_name = f"{base_name}_binary_inverted.tif"
+            else:
+                default_name = f"{base_name}_binary.tif"
             out_dir, chosen_name = ask_save_file(self.root, default_name)
             if out_dir:
                 save_name = chosen_name or default_name
@@ -1441,6 +1451,15 @@ class App:
             "Click Simulate to build the pore network from the current image and run "
             "the ticked simulations with the chosen phase.")
 
+        # Voxel size — used by snow2 to set network geometry in physical units
+        vs_frame = tk.Frame(body)
+        vs_frame.pack(fill="x", padx=12, pady=(4, 0))
+        vs_lbl = tk.Label(vs_frame, text="Voxel size (m):")
+        vs_lbl.pack(side="left")
+        Tooltip(vs_lbl, "Physical length of each voxel (m) — passed to snow2 for network geometry")
+        vs_var = tk.StringVar(value="1")
+        tk.Entry(vs_frame, textvariable=vs_var, width=14).pack(side="left", padx=6)
+
         tk.Label(body, text="Phase selection", font=("Segoe UI", 12, "bold")).pack(
             anchor="w", padx=10, pady=(6, 0))
         phase_container = tk.Frame(body)
@@ -1498,16 +1517,28 @@ class App:
                     return
                 name_map = {f: f for _, f in saving}
 
-            # Build (or reuse) the pore network from the current image.
-            if self.pn is None or self.pn_image_id != id(self.image):
+            # Parse voxel size
+            try:
+                voxel_size = float(vs_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Invalid input",
+                                     "Voxel size must be a number.", parent=win)
+                return
+
+            # Build (or reuse) the pore network; rebuild if image or voxel_size changed.
+            if (self.pn is None
+                    or self.pn_image_id != id(self.image)
+                    or self.pn_voxel_size != voxel_size):
                 ok, pn, out, err = run_operation(
                     win, "Building pore network (snow2)", opnm.build_network,
-                    {"image": self.image}, output_dir=out_dir)
+                    {"image": self.image, "voxel_size": voxel_size},
+                    output_dir=out_dir)
                 if not ok:
                     messagebox.showerror("Network build failed", err, parent=win)
                     return
                 self.pn = pn
                 self.pn_image_id = id(self.image)
+                self.pn_voxel_size = voxel_size
 
             for sec in chosen:
                 try:

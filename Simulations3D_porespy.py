@@ -214,7 +214,6 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     # method: algorith used for finding the next voxel to be invaded, options: 'qbip' default (uses a binary heap, faster), 'ibip' (uses image analysis tools)
 
     pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
-
     if axis is None:
         inj = ps.simulations.injection(im=im, pc=pc, min_size=min_size, conn=conn, maxiter=maxiter, method=method)
     elif axis == 0:
@@ -235,19 +234,28 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     save_results_vtk("injection", im, inj)
     plot_results(im, inj, axis, "INJECTION")
 
-    # Plotting Saturation curve
-    Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=inj.im_pc, seq=inj.im_seq, mode='drainage')
+    # Plotting Saturation curve — only possible when invasion actually occurred
+    Pc, Snwp = None, None
+    if not np.any(inj.im_snwp > 0):
+        print("Note: no pore invasion recorded — saturation curve not available.")
+    else:
+        try:
+            try:
+                Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=inj.im_pc, seq=inj.im_seq, mode='drainage')
+            except (IndexError, ValueError):
+                Pc, Snwp = ps.metrics.pc_map_to_pc_curve(im=im, pc=inj.im_pc, mode='drainage')
+            fig, ax = plt.subplots(figsize=[4, 4])
+            fig.canvas.manager.set_window_title("INJECTION - Saturation Curve")
+            ax.plot(np.log10(Pc), Snwp, markersize=6, linewidth=1, color='blue')
+            ax.set_xlabel('log(Capillary Pressure [Pa])')
+            ax.set_ylabel('Non-Wetting Phase Saturation')
+            ax.set_xlim([None, None])
+            ax.set_ylim([-0.05, 1.05])
+            plt.show(block=False)
+        except Exception as _e:
+            print(f"Note: could not plot saturation curve ({_e})")
 
-    fig, ax = plt.subplots(figsize=[4, 4])
-    fig.canvas.manager.set_window_title("INJECTION - Saturation Curve")
-    ax.plot(np.log10(Pc), Snwp, markersize=6, linewidth=1, color='blue')
-    ax.set_xlabel('log(Capillary Pressure [Pa])')
-    ax.set_ylabel('Non-Wetting Phase Saturation')
-    ax.set_xlim([None, None])
-    ax.set_ylim([-0.05, 1.05])
-    plt.show(block=False)
-
-    if save_excel:
+    if save_excel and Pc is not None:
         pd.DataFrame({'Capillary Pressure [Pa]': Pc, 'Non-Wetting Phase Saturation': Snwp}).to_excel('Injection_Saturation_Curve.xlsx', index=False)
         print("Plot saved to Injection_Saturation_Curve.xlsx")
 
