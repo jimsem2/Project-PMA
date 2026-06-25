@@ -830,7 +830,7 @@ PSIM_SPECS = [
         F("axis", "choice_int_none", "None", AXIS_NONE, tooltip=_TT_AXIS_SIM),
         F("min_size", "int", "5", tooltip=_TT_MIN_SIZE),
         F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
-        F("maxiter", "int", "200", tooltip="Maximum invasion iterations"),
+        F("maxiter", "int", "10000", tooltip="Maximum invasion iterations"),
         F("method", "choice_str", "qbip", ["qbip", "ibip"],
           tooltip="qbip = faster (binary heap); ibip = image-based"),
         F("save_excel", "bool", False, tooltip="Export capillary pressure–saturation curve to Excel")]),

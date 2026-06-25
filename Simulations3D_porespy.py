@@ -35,62 +35,47 @@ def save_results_vtk(filename, im, res):
 
 
 def plot_results(im, res, axis, title=""):
+    # Helper: mask solid voxels with NaN so they don't distort colorbars
+    def _pore(arr):
+        return np.where(im, arr.astype(float), np.nan)
+
+    def _log_pc():
+        with np.errstate(divide='ignore', invalid='ignore'):
+            lpc = np.where((res.im_pc > 0) & im, np.log10(res.im_pc), np.nan)
+        return lpc
+
+    seq = _pore(res.im_seq)
+    snwp = _pore(res.im_snwp)
+    lpc = _log_pc()
+
     fig, ax = plt.subplots(1, 3, figsize=[15, 4])
     fig.canvas.manager.set_window_title(title)
+
     if axis is None or axis == 0:
-        h = ax[0].imshow((res.im_seq / im)[:, int(im.shape[1]/2), :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
-        cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
-        ax[0].axis(False)
-        ax[0].set_title("(a) Sequence Map")
-
-        h = ax[1].imshow((res.im_snwp / im)[:, int(im.shape[1]/2), :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("Non-Wetting Phase Saturation", rotation=90, y=0, c="w")
-        ax[1].axis(False)
-        ax[1].set_title("(b) Saturation Map")
-
-        h = ax[2].imshow(np.log10(res.im_pc)[:, int(im.shape[1]/2), :] / im[:, int(im.shape[1]/2), :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
-        ax[2].axis(False)
-        ax[2].set_title("(c) Capillary Pressure Map")
+        s = np.s_[:, int(im.shape[1] / 2), :]
     elif axis == 1:
-        h = ax[0].imshow((res.im_seq / im)[:, :, int(im.shape[2]/2)])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
-        cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
-        ax[0].axis(False)
-        ax[0].set_title("(a) Sequence Map")
-
-        h = ax[1].imshow((res.im_snwp / im)[:, :, int(im.shape[2]/2)])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("Non-Wetting Phase Saturation", rotation=90, y=0, c="w")
-        ax[1].axis(False)
-        ax[1].set_title("(b) Saturation Map")
-
-        h = ax[2].imshow(np.log10(res.im_pc)[:, :, int(im.shape[2]/2)] / im[:, :, int(im.shape[2]/2)])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
-        ax[2].axis(False)
-        ax[2].set_title("(c) Capillary Pressure Map")
+        s = np.s_[:, :, int(im.shape[2] / 2)]
     else:
-        h = ax[0].imshow((res.im_seq / im)[int(im.shape[0]/2), :, :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
-        cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
-        ax[0].axis(False)
-        ax[0].set_title("(a) Sequence Map")
+        s = np.s_[int(im.shape[0] / 2), :, :]
 
-        h = ax[1].imshow((res.im_snwp / im)[int(im.shape[0]/2), :, :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("Non-Wetting Phase Saturation", rotation=90, y=0, c="w")
-        ax[1].axis(False)
-        ax[1].set_title("(b) Saturation Map")
+    h = ax[0].imshow(seq[s])
+    cbar = fig.colorbar(h, aspect=10, format="{x:.0f}")
+    cbar.ax.set_title("Invasion Sequence", rotation=90, y=0, c="w")
+    ax[0].axis(False)
+    ax[0].set_title("(a) Sequence Map")
 
-        h = ax[2].imshow(np.log10(res.im_pc)[int(im.shape[0]/2), :, :] / im[int(im.shape[0]/2), :, :])
-        cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
-        cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
-        ax[2].axis(False)
-        ax[2].set_title("(c) Capillary Pressure Map")
+    h = ax[1].imshow(snwp[s])
+    cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
+    cbar.ax.set_title("Non-Wetting Phase Saturation", rotation=90, y=0, c="w")
+    ax[1].axis(False)
+    ax[1].set_title("(b) Saturation Map")
+
+    h = ax[2].imshow(lpc[s])
+    cbar = fig.colorbar(h, aspect=10, format="{x:.1f}")
+    cbar.ax.set_title("log(Capillary Pressure)", rotation=90, y=0, c="w")
+    ax[2].axis(False)
+    ax[2].set_title("(c) Capillary Pressure Map")
+
     plt.show(block=False)
 
 
@@ -107,9 +92,10 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
     # steps: number of steps to show in the sequence map, default None (shows all steps)
     # save_excel: if True, saves the results in an Excel file, default False
 
-    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
+    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)
     if axis is None:
-        drn = ps.simulations.drainage(im=im, pc=pc, min_size=min_size, steps=steps)
+        inlets = ps.generators.borders(shape=im.shape, mode="faces")
+        drn = ps.simulations.drainage(im=im, pc=pc, min_size=min_size, inlets=inlets, steps=steps)
     elif axis == 0:
         inlets = ps.generators.faces(im.shape, inlet=0)
         outlets = ps.generators.faces(im.shape, outlet=0)
@@ -160,9 +146,10 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
     # steps: number of steps to show in the sequence map, default None (shows all steps)
     # save_excel: if True, saves the results in an Excel file, default False
 
-    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
+    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)
     if axis is None:
-        imb = ps.simulations.imbibition(im=im, pc=pc, min_size=min_size, steps=steps)
+        inlets = ps.generators.borders(shape=im.shape, mode="faces")
+        imb = ps.simulations.imbibition(im=im, pc=pc, min_size=min_size, inlets=inlets, steps=steps)
     elif axis == 0:
         inlets = ps.generators.faces(im.shape, inlet=0)
         outlets = ps.generators.faces(im.shape, outlet=0)
@@ -213,9 +200,10 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     # maxiter: maximum number of iterations for the injection process, default 200
     # method: algorith used for finding the next voxel to be invaded, options: 'qbip' default (uses a binary heap, faster), 'ibip' (uses image analysis tools)
 
-    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)   
+    pc = ps.filters.capillary_transform(im=im, sigma=sigma, theta=theta, g=g, rho_nwp=rho_nwp, rho_wp=rho_wp, voxel_size=voxel_size)
     if axis is None:
-        inj = ps.simulations.injection(im=im, pc=pc, min_size=min_size, conn=conn, maxiter=maxiter, method=method)
+        inlets = ps.generators.borders(shape=im.shape, mode="faces")
+        inj = ps.simulations.injection(im=im, pc=pc, min_size=min_size, inlets=inlets, conn=conn, maxiter=maxiter, method=method)
     elif axis == 0:
         inlets = ps.generators.faces(im.shape, inlet=0)
         outlets = ps.generators.faces(im.shape, outlet=0)
