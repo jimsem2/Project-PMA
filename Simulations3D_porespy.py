@@ -112,7 +112,7 @@ def DRAINAGE(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_si
         raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
 
-    save_results_vtk("drainage", im, drn)
+    save_results_vtk("porespy_drainage", im, drn)
     plot_results(im, drn, axis, "DRAINAGE")
 
     # Plotting Saturation curve
@@ -165,7 +165,7 @@ def IMBIBITION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_
     else:
         raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
-    save_results_vtk("imbibition", im, imb)
+    save_results_vtk("porespy_imbibition", im, imb)
     plot_results(im, imb, axis, "IMBIBITION")
 
     # Plotting Saturation curve
@@ -219,7 +219,7 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     else:
         raise ValueError(f"Unknown axis '{axis}'. Choose None, 0, 1, or 2.")
 
-    save_results_vtk("injection", im, inj)
+    save_results_vtk("porespy_injection", im, inj)
     plot_results(im, inj, axis, "INJECTION")
 
     # Plotting Saturation curve — only possible when invasion actually occurred

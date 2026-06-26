@@ -13,9 +13,6 @@ np.random.seed(10)
 # importing this module is cheap and the network can be built from any image.
 im = None
 pn = None
-output_dir = "results_paraview"
-
-
 def build_network(image, voxel_size=1):
     """Build an OpenPNM network from a PoreSpy binary image.
 
@@ -24,7 +21,6 @@ def build_network(image, voxel_size=1):
     """
     global im, pn
     im = image
-    os.makedirs(output_dir, exist_ok=True)
 
     im_snow2 = ps.networks.snow2(image, voxel_size=voxel_size)
     pn = op.io.network_from_porespy(im_snow2.network)
@@ -174,27 +170,65 @@ def simulate_stokes_flow(network=None, chosen_phase='water', axis="x", inlet_pre
     phase["pore.pressure"] = pressure
 
     # Calculate flow rate through the outlet
-    flow_rate = sf.rate(pores=outlet_pores, mode="group")       # group mode sums the flow through all outlet pores
-    print(f"Total flow rate through outlet ({axis}-axis): {flow_rate[0]:.6e}")
+    # Note: negative sign is correct — OpenPNM convention: positive = flow INTO a pore.
+    # Outlet pores have fluid flowing OUT → negative. Magnitude = volumetric flow rate.
+    flow_rate = sf.rate(pores=outlet_pores, mode="group")
+    Q = np.abs(flow_rate[0])
+    print(f"Total flow rate through outlet ({axis}-axis): {flow_rate[0]:.5e} m³/s  "
+          f"(negative = fluid exiting domain, magnitude = {Q:.5e} m³/s)")
 
     # Calculate velocity at throats (Q / A)
     throat_area = network["throat.cross_sectional_area"]
-    throat_flow = sf.rate(throats=network.Ts, mode="single")    # single mode gives flow through each throat, Ts: T for throats, s for indices of all throats
-    velocity = np.abs((throat_flow) / throat_area)
+    throat_flow = sf.rate(throats=network.Ts, mode="single")
+    velocity = np.abs(throat_flow / throat_area)
     phase["throat.velocity"] = velocity
 
-    # Calculate Darcy permeability: K = Q * mu * L / (A * dP)
+    # Interpolate throat velocity to pore centres (average of adjacent throats)
+    # so that pore.velocity appears as point data in ParaView and can colour Glyph spheres
+    conns = network["throat.conns"]
+    pore_vel = np.zeros(network.Np)
+    counts = np.zeros(network.Np, dtype=int)
+    np.add.at(pore_vel, conns[:, 0], velocity)
+    np.add.at(pore_vel, conns[:, 1], velocity)
+    np.add.at(counts, conns[:, 0], 1)
+    np.add.at(counts, conns[:, 1], 1)
+    pore_vel = np.where(counts > 0, pore_vel / counts, 0.0)
+    phase["pore.velocity"] = pore_vel
+
+    # Darcy permeability: K = Q * mu * L / (A * dP)
     mu = phase["pore.viscosity"].mean()
-    A = op.topotools.get_domain_area(pn, inlets=inlet_pores, outlets=outlet_pores)  # Cross-sectional area from the other two axes
-    L = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)    # length along chosen axis
-    delta_P = inlet_pressure - outlet_pressure  # applied pressure difference
-    K = np.abs(flow_rate[0]) * mu * L / (A * delta_P)
-    print(f"Darcy permeability: {K:.6e} m^2")
+    delta_P = inlet_pressure - outlet_pressure
+    _D  = 9.869233e-13   # 1 Darcy in m²
+    _mD = 9.869233e-16   # 1 mD in m²
+
+    def _fmt_K(label, K_val):
+        print(f"  Darcy permeability [{label}]:")
+        print(f"    K = {K_val:.5e} m²  |  {K_val/_D:.5e} D  |  {K_val/_mD:.5e} mD")
+
+    # Method 1 — OpenPNM geometric estimation (uses boundary pore positions)
+    try:
+        A_geo = op.topotools.get_domain_area(pn, inlets=inlet_pores, outlets=outlet_pores)
+        L_geo = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
+        K_geo = Q * mu * L_geo / (A_geo * delta_P)
+        _fmt_K("geometric method — area & length from boundary pores", K_geo)
+    except Exception as _e:
+        print(f"  Darcy permeability [geometric method]: could not compute ({_e})")
+        K_geo = None
+
+    # Method 2 — coordinate-based estimation (always works)
+    _ax = {"x": 0, "y": 1, "z": 2}[axis]
+    _perp = [i for i in range(3) if i != _ax]
+    coords = pn["pore.coords"]
+    L_coord = abs(coords[outlet_pores, _ax].mean() - coords[inlet_pores, _ax].mean())
+    A_coord = np.prod([(coords[:, p].max() - coords[:, p].min()) for p in _perp])
+    K_coord = Q * mu * L_coord / (A_coord * delta_P)
+    _fmt_K("coordinate-based estimation (L and A from pore coordinate extents)", K_coord)
+    K = K_geo if K_geo is not None else K_coord
 
     # Save to VTK for ParaView
     projSF = network.project
-    op.io.project_to_vtk(project=projSF, filename=os.path.join(output_dir, "stokes_flow"), fill_nans=0.0)
-    print(f"Stokes flow results saved to '{output_dir}/stokes_flow.vtp'")
+    op.io.project_to_vtk(project=projSF, filename="openpnm_stokes_flow", fill_nans=0.0)
+    print("Stokes flow results saved to 'openpnm_stokes_flow.vtp'")
 
     return sf, K
 
@@ -223,28 +257,56 @@ def simulate_fickian_diffusion(network=None, chosen_phase='water', axis="x", inl
     concentration = fd["pore.concentration"]
     phase["pore.concentration"] = concentration
 
-    # Calculate diffusive rate
+    # Interpolate pore concentration to throat centres so tubes can be coloured by concentration
+    _conns = network["throat.conns"]
+    phase["throat.concentration"] = (concentration[_conns[:, 0]] + concentration[_conns[:, 1]]) / 2
+
+    # Diffusive rate — negative = flux exiting domain at outlet (OpenPNM sign convention).
+    # Unit: [concentration-unit] × m³/s.
+    #   → mol/s  if inlet_concentration / outlet_concentration are in mol/m³
+    #   → m³/s   if they are dimensionless (0–1); D_eff and tortuosity are unaffected either way.
     diff_rate = fd.rate(pores=outlet_pores, mode="group")
-    print(f"Total diffusive rate through outlet ({axis}-axis): {diff_rate[0]:.6e}")
+    J = np.abs(diff_rate[0])
+    c_unit = "mol/s (if C in mol/m³) or m³/s (if C dimensionless)"
+    print(f"Total diffusive rate through outlet ({axis}-axis): {diff_rate[0]:.5e}  [{c_unit}]  "
+          f"(negative = flux exiting domain, magnitude = {J:.5e})")
 
-    # Calculate effective diffusivity: D_eff = J * L / (A * dC)
+    # Effective diffusivity: D_eff = J * L / (A * dC)
     D_bulk = phase["pore.diffusivity"].mean()
-    A = op.topotools.get_domain_area(pn, inlets=inlet_pores, outlets=outlet_pores)  # Cross-sectional area from the other two axes
-    L = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)    # length along chosen axis
     delta_C = inlet_concentration - outlet_concentration
-    D_eff = np.abs(diff_rate[0]) * L / (A * delta_C)
-    print(f"Effective diffusivity: {D_eff:.6e} m^2/s")
 
-    # Calculate tortuosity: tau = (D_bulk / D_eff) * porosity
-    # Use the actual void fraction of the source image rather than Np/length^3.
+    def _fmt_D(label, D_val):
+        print(f"  Effective diffusivity [{label}]: {D_val:.5e} m²/s")
+
+    # Method 1 — OpenPNM geometric estimation
+    try:
+        A_geo = op.topotools.get_domain_area(pn, inlets=inlet_pores, outlets=outlet_pores)
+        L_geo = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
+        D_eff_geo = J * L_geo / (A_geo * delta_C)
+        _fmt_D("geometric method — area & length from boundary pores", D_eff_geo)
+    except Exception as _e:
+        print(f"  Effective diffusivity [geometric method]: could not compute ({_e})")
+        D_eff_geo = None
+
+    # Method 2 — coordinate-based estimation (always works)
+    _ax = {"x": 0, "y": 1, "z": 2}[axis]
+    _perp = [i for i in range(3) if i != _ax]
+    _coords = pn["pore.coords"]
+    L_coord = abs(_coords[outlet_pores, _ax].mean() - _coords[inlet_pores, _ax].mean())
+    A_coord = np.prod([(_coords[:, p].max() - _coords[:, p].min()) for p in _perp])
+    D_eff_coord = J * L_coord / (A_coord * delta_C)
+    _fmt_D("coordinate-based estimation (L and A from pore coordinate extents)", D_eff_coord)
+    D_eff = D_eff_geo if D_eff_geo is not None else D_eff_coord
+
+    # Tortuosity: tau = (D_bulk / D_eff) * porosity
     porosity = float(im.sum()) / im.size
     tort = D_bulk * porosity / D_eff
-    print(f"Tortuosity: {tort:.4f}")
+    print(f"Tortuosity: {tort:.5f}")
 
     # Save to VTK for ParaView
     proj = network.project
-    op.io.project_to_vtk(project=proj, filename=os.path.join(output_dir, "fickian_diffusion"), fill_nans=0.0)
-    print(f"Fickian diffusion results saved to '{output_dir}/fickian_diffusion.vtp'")
+    op.io.project_to_vtk(project=proj, filename="openpnm_fickian_diffusion", fill_nans=0.0)
+    print("Fickian diffusion results saved to 'openpnm_fickian_diffusion.vtp'")
 
     return fd, D_eff, tort
 
@@ -295,25 +357,32 @@ def simulate_advection_diffusion(network=None, chosen_phase='water', axis="x", i
     conc_ad = ad["pore.concentration"]
     phase["pore.concentration_ad"] = conc_ad
 
+    # Interpolate pore concentration to throat centres for tube coloring in ParaView
+    _conns_ad = network["throat.conns"]
+    phase["throat.concentration_ad"] = (conc_ad[_conns_ad[:, 0]] + conc_ad[_conns_ad[:, 1]]) / 2
 
-    # Calculate combined flux
+    # Combined rate — negative = total flux exiting domain (OpenPNM sign convention)
     combined_rate = ad.rate(pores=outlet_pores, mode="group")
-    print(f"Combined advection-diffusion rate ({axis}-axis): {combined_rate[0]:.6e}")
+    J_ad = np.abs(combined_rate[0])
+    print(f"Combined advection-diffusion rate ({axis}-axis): {combined_rate[0]:.5e} m³/s  "
+          f"(negative = flux exiting domain, magnitude = {J_ad:.5e} m³/s)")
 
-    # Calculate Peclet number: Pe = v * L / D
+    # Peclet number: Pe = v * L / D  (dimensionless)
     D_bulk = phase["pore.diffusivity"].mean()
-    L = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)    # length along chosen axis
-    if "throat.velocity" in phase.keys():
-        v_mean = phase["throat.velocity"].mean()
-    else:
-        v_mean = 1e-5  # fallback
+    try:
+        L = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
+    except Exception:
+        _ax_ad = {"x": 0, "y": 1, "z": 2}[axis]
+        _c_ad = pn["pore.coords"]
+        L = abs(_c_ad[outlet_pores, _ax_ad].mean() - _c_ad[inlet_pores, _ax_ad].mean())
+    v_mean = phase["throat.velocity"].mean() if "throat.velocity" in phase.keys() else 1e-5
     Pe = v_mean * L / D_bulk
-    print(f"Mean Peclet number: {Pe:.4f}")
+    print(f"Mean Peclet number: {Pe:.5f}  (dimensionless — Pe > 1 means advection dominates)")
 
     # Save to VTK for ParaView
     proj = network.project
-    op.io.project_to_vtk(project=proj, filename=os.path.join(output_dir, "advection_diffusion"), fill_nans=0.0)
-    print(f"Advection-diffusion results saved to '{output_dir}/advection_diffusion.vtp'")
+    op.io.project_to_vtk(project=proj, filename="openpnm_advection_diffusion", fill_nans=0.0)
+    print("Advection-diffusion results saved to 'openpnm_advection_diffusion.vtp'")
 
     return ad, Pe, combined_rate[0]
 
@@ -334,27 +403,37 @@ def simulate_drainage(network=None, inv_phase='air', def_phase='water', axis="x"
     invading_phase = select_phase(network=network, phase_name=inv_phase, **(phase_overrides or {}))
     defending_phase = select_phase(network=network, phase_name=def_phase)
 
-    inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     drain = op.algorithms.Drainage(network=network, phase=invading_phase)
 
-    inlet_pores = network.pores(inlet_label)
+    if axis == "all":
+        inlet_pores = np.unique(np.concatenate([
+            network.pores(face)
+            for face in ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
+            if network.pores(face).size > 0
+        ]))
+    else:
+        inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
+        inlet_pores = network.pores(inlet_label)
     drain.set_inlet_BC(pores=inlet_pores)
-    drain.run(pressures=50)         # Run drainage with 50 pressure steps (default is 25). Adjust as needed for resolution.
+    # Run at every unique throat entry pressure (maximum resolution).
+    # Passing pressures=N would sample only N uniformly-spaced levels, causing
+    # fewer curve points than the actual number of distinct throat radii.
+    drain.run()
 
     # Get capillary pressure - saturation curve
     pc_data = drain.pc_curve()
 
     # Plot saturation curve
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(pc_data.pc, pc_data.snwp, "b-o", markersize=4)
+    fig.canvas.manager.set_window_title("OpenPNM: Drainage - Saturation Curve")
+    ax.step(pc_data.pc, pc_data.snwp, "b-", where="post", linewidth=1.2)
+    ax.scatter(pc_data.pc, pc_data.snwp, s=20, color="blue", zorder=3)
     ax.set_xlabel("Capillary Pressure [Pa]")
     ax.set_ylabel("Non-Wetting Phase Saturation")
     ax.set_title("Drainage: Capillary Pressure vs Saturation")
     ax.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "drainage_saturation_curve.png"), dpi=150)
     plt.show(block=False)
-    print(f"Drainage saturation curve saved to '{output_dir}/drainage_saturation_curve.png'")
 
     # Save saturation curve data to Excel if requested
     if save_excel:
@@ -369,8 +448,8 @@ def simulate_drainage(network=None, inv_phase='air', def_phase='water', axis="x"
 
     # Save to VTK for ParaView
     proj = network.project
-    op.io.project_to_vtk(project=proj, filename=os.path.join(output_dir, "drainage"), fill_nans=0.0)
-    print(f"Drainage results saved to '{output_dir}/drainage.vtp'")
+    op.io.project_to_vtk(project=proj, filename="openpnm_drainage", fill_nans=0.0)
+    print("Drainage results saved to 'openpnm_drainage.vtp'")
 
     return drain, pc_data
 
@@ -388,27 +467,32 @@ def simulate_invasion_percolation(network=None, inv_phase='air', def_phase='wate
     invading_phase = select_phase(network=network, phase_name=inv_phase, **(phase_overrides or {}))
     defending_phase = select_phase(network=network, phase_name=def_phase)
 
-    inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
     ip = op.algorithms.InvasionPercolation(network=network, phase=invading_phase)
 
-    inlet_pores = network.pores(inlet_label)
+    if axis == "all":
+        inlet_pores = np.unique(np.concatenate([
+            network.pores(face)
+            for face in ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
+            if network.pores(face).size > 0
+        ]))
+    else:
+        inlet_label, outlet_label, coord_idx = get_axis_faces(axis)
+        inlet_pores = network.pores(inlet_label)
     ip.set_inlet_BC(pores=inlet_pores)
     ip.run()
 
     # Get capillary pressure - saturation curve
     pc_data = ip.pc_curve()
 
-    # Plot saturation curve
     fig, ax = plt.subplots(figsize=(8, 5))
+    fig.canvas.manager.set_window_title("OpenPNM: Invasion Percolation - Saturation Curve")
     ax.plot(pc_data.pc, pc_data.snwp, "r-o", markersize=4)
     ax.set_xlabel("Capillary Pressure [Pa]")
     ax.set_ylabel("Non-Wetting Phase Saturation")
     ax.set_title("Invasion Percolation: Capillary Pressure vs Saturation")
     ax.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "invasion_percolation_saturation_curve.png"), dpi=150)
     plt.show(block=False)
-    print(f"IP saturation curve saved to '{output_dir}/invasion_percolation_saturation_curve.png'")
 
     # Save saturation curve data to Excel if requested
     if save_excel:
@@ -423,8 +507,8 @@ def simulate_invasion_percolation(network=None, inv_phase='air', def_phase='wate
 
     # Save to VTK for ParaView
     proj = network.project
-    op.io.project_to_vtk(project=proj, filename=os.path.join(output_dir, "invasion_percolation"), fill_nans=0.0)
-    print(f"Invasion percolation results saved to '{output_dir}/invasion_percolation.vtp'")
+    op.io.project_to_vtk(project=proj, filename="openpnm_invasion_percolation", fill_nans=0.0)
+    print("Invasion percolation results saved to 'openpnm_invasion_percolation.vtp'")
 
     return ip, pc_data
 

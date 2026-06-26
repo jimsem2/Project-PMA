@@ -426,14 +426,14 @@ _FUNC_SAVE_FILE = {
     met.REGION_SURFACE_AREAS: "region_surface_areas.xlsx",
     met.REGION_VOLUMES: "region_volumes.xlsx",
     met.REGIONPROPS_3D: "regionprops_3D.xlsx",
-    psim.DRAINAGE: "drainage.vti",
-    psim.IMBIBITION: "imbibition.vti",
-    psim.INJECTION: "injection.vti",
-    opnm.simulate_stokes_flow: "stokes_flow.vtp",
-    opnm.simulate_fickian_diffusion: "fickian_diffusion.vtp",
-    opnm.simulate_advection_diffusion: "advection_diffusion.vtp",
-    opnm.simulate_drainage: "drainage.vtp",
-    opnm.simulate_invasion_percolation: "invasion_percolation.vtp",
+    psim.DRAINAGE: "porespy_drainage.vti",
+    psim.IMBIBITION: "porespy_imbibition.vti",
+    psim.INJECTION: "porespy_injection.vti",
+    opnm.simulate_stokes_flow: "openpnm_stokes_flow.vtp",
+    opnm.simulate_fickian_diffusion: "openpnm_fickian_diffusion.vtp",
+    opnm.simulate_advection_diffusion: "openpnm_advection_diffusion.vtp",
+    opnm.simulate_drainage: "openpnm_drainage.vtp",
+    opnm.simulate_invasion_percolation: "openpnm_invasion_percolation.vtp",
 }
 
 
@@ -576,6 +576,7 @@ def make_window(app, title, intro):
 AXIS3 = ["0", "1", "2"]
 AXIS_NONE = ["None", "0", "1", "2"]
 XYZ = ["x", "y", "z"]
+XYZ_ALL = ["x", "y", "z", "all"]
 
 GEN_SPECS = [
     ("BLOBS", gen.BLOBS, [
@@ -864,20 +865,20 @@ PNM_SIM_SPECS = [
         F("outlet_pressure", "float", "0.0", tooltip="Outlet pressure boundary condition")]),
     ("Fickian diffusion", opnm.simulate_fickian_diffusion, [
         F("axis", "choice_str", "x", XYZ, tooltip="Axis along which concentration gradient is applied"),
-        F("inlet_concentration", "float", "1.0", tooltip="Inlet concentration boundary condition"),
-        F("outlet_concentration", "float", "0.0", tooltip="Outlet concentration boundary condition")]),
+        F("inlet_concentration", "float", "1.0", tooltip="Inlet concentration (mol/m³ for mol/s rate; dimensionless 0–1 gives m³/s rate)"),
+        F("outlet_concentration", "float", "0.0", tooltip="Outlet concentration (same units as inlet)")]),
     ("Advection-diffusion", opnm.simulate_advection_diffusion, [
         F("axis", "choice_str", "x", XYZ, tooltip="Axis along which flow and diffusion occur"),
         F("inlet_pressure", "float", "1.0", tooltip="Inlet pressure boundary condition"),
         F("outlet_pressure", "float", "0.0", tooltip="Outlet pressure boundary condition"),
-        F("inlet_concentration", "float", "1.0", tooltip="Inlet concentration boundary condition"),
-        F("outlet_concentration", "float", "0.0", tooltip="Outlet concentration boundary condition")]),
+        F("inlet_concentration", "float", "1.0", tooltip="Inlet concentration (mol/m³ for mol/s rate; dimensionless 0–1 gives m³/s rate)"),
+        F("outlet_concentration", "float", "0.0", tooltip="Outlet concentration (same units as inlet)")]),
     ("Drainage", opnm.simulate_drainage, [
-        F("axis", "choice_str", "x", XYZ, tooltip="Axis along which invasion occurs"),
-        F("save_excel", "bool", False, tooltip=_TT_XL)]),
+        F("axis", "choice_str", "x", XYZ_ALL, tooltip="Invasion axis; 'all' = all boundary faces simultaneously"),
+        F("save_excel", "bool", False, tooltip="Export capillary pressure–saturation curve to Excel")]),
     ("Invasion percolation", opnm.simulate_invasion_percolation, [
-        F("axis", "choice_str", "x", XYZ, tooltip="Axis along which invasion occurs"),
-        F("save_excel", "bool", False, tooltip=_TT_XL)]),
+        F("axis", "choice_str", "x", XYZ_ALL, tooltip="Invasion axis; 'all' = all boundary faces simultaneously"),
+        F("save_excel", "bool", False, tooltip="Export capillary pressure–saturation curve to Excel")]),
 ]
 
 
@@ -1560,7 +1561,7 @@ class App:
                     sec["result"].show(out or "Done (see saved VTK files).", ok=True)
                     sf = get_save_file(sec)
                     if sf and out_dir and sf in name_map:
-                        _rename_saved(out_dir, sf, name_map[sf], subdir="results_paraview")
+                        _rename_saved(out_dir, sf, name_map[sf])
                 else:
                     sec["result"].show(err, ok=False)
             for s in sim_secs:
