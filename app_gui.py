@@ -311,6 +311,67 @@ def section_order(sel):
     return int(s) if s else None
 
 
+def _dicom_read_force(path):
+    """Read a DICOM file, tolerating a missing file-meta header (no 'DICM'
+    preamble) which some scanner exports omit. Assumes Implicit VR Little
+    Endian — the most common transfer syntax for such raw exports — if the
+    Transfer Syntax UID is absent."""
+    import pydicom
+    from pydicom.uid import ImplicitVRLittleEndian
+    ds = pydicom.dcmread(path, force=True)
+    if "TransferSyntaxUID" not in ds.file_meta:
+        ds.file_meta.TransferSyntaxUID = ImplicitVRLittleEndian
+    return ds
+
+
+def _dicom_voxel_size(ds):
+    """Return (dx, dy, dz) pixel/slice spacing in mm, falling back to 1.0 for
+    any missing field."""
+    try:
+        dy, dx = (float(v) for v in ds.PixelSpacing)
+    except Exception:
+        dx = dy = 1.0
+    dz = float(getattr(ds, "SliceThickness", 1.0) or 1.0)
+    return dx, dy, dz
+
+
+def _dicom_pixels(ds):
+    """Return the rescaled pixel array (Hounsfield units if CT) as float64."""
+    arr = ds.pixel_array.astype(np.float64)
+    slope = float(getattr(ds, "RescaleSlope", 1) or 1)
+    intercept = float(getattr(ds, "RescaleIntercept", 0) or 0)
+    return arr * slope + intercept
+
+
+def _read_dicom_file(path):
+    """Load a single .dcm file. Supports multi-frame (3D-in-one-file) DICOM;
+    a plain single-frame file is returned as a 1-slice volume.
+    Returns (array shaped (H, W, n_slices), (dx, dy, dz) voxel size in mm)."""
+    ds = _dicom_read_force(path)
+    arr = _dicom_pixels(ds)
+    if arr.ndim == 2:
+        arr = arr[:, :, np.newaxis]
+    elif arr.ndim == 3:
+        arr = np.transpose(arr, (1, 2, 0))   # (frames,H,W) → (H,W,frames)
+    else:
+        raise ValueError(f"Unsupported DICOM pixel array shape {arr.shape}")
+    return arr, _dicom_voxel_size(ds)
+
+
+def _read_dicom_series(paths):
+    """Load a folder of single-slice .dcm files into one 3D volume, ordered
+    by InstanceNumber when available (falls back to filename order).
+    Returns (array shaped (H, W, n_slices), (dx, dy, dz) voxel size in mm)."""
+    datasets = [_dicom_read_force(p) for p in paths]
+    try:
+        datasets.sort(key=lambda d: int(d.InstanceNumber))
+    except Exception:
+        pass  # keep filename-sorted order (paths were pre-sorted)
+    slices = [_dicom_pixels(ds) for ds in datasets]
+    arr = np.stack(slices, axis=-1)  # (H, W, n_slices)
+    return arr, _dicom_voxel_size(datasets[0])
+
+
 def _ask_raw_params(parent, file_size):
     """Dialog to collect shape and dtype for a headerless .raw file.
     Auto-suggests values from the file size. Returns (shape_tuple, dtype_str) or (None, None)."""
@@ -921,19 +982,21 @@ class App:
     def run_import(self):
         chooser = tk.Toplevel(self.root)
         chooser.title("Import image")
-        chooser.geometry("380x200")
+        chooser.geometry("380x220")
         chooser.transient(self.root)
         tk.Label(chooser, text="Select the image source",
                  font=("Segoe UI", 12, "bold")).pack(pady=(18, 4))
-        tk.Label(chooser, text="A single 3D .tif or .raw file, or a folder of 2D .tif slices.",
+        tk.Label(chooser, text="A single 3D .tif, .raw, or .dcm file, or a folder of "
+                               "2D .tif or .dcm slices.",
                  fg="#555", wraplength=340).pack(pady=(0, 12))
 
         def pick_file():
             path = filedialog.askopenfilename(
                 parent=chooser, title="Select a 3D image file",
-                filetypes=[("3D image", "*.tif *.tiff *.raw"),
+                filetypes=[("3D image", "*.tif *.tiff *.raw *.dcm"),
                             ("TIFF image", "*.tif *.tiff"),
                             ("Raw binary", "*.raw"),
+                            ("DICOM", "*.dcm"),
                             ("All files", "*.*")])
             if path:
                 chooser.destroy()
@@ -941,14 +1004,14 @@ class App:
 
         def pick_folder():
             path = filedialog.askdirectory(parent=chooser,
-                                           title="Select a folder of 2D .tif slices")
+                                           title="Select a folder of 2D slices (.tif or .dcm)")
             if path:
                 chooser.destroy()
                 self._do_import(path, is_folder=True)
 
-        tk.Button(chooser, text="Select 3D image file (.tif / .raw)", width=30,
+        tk.Button(chooser, text="Select 3D image file (.tif / .raw / .dcm)", width=34,
                   command=pick_file).pack(pady=4)
-        tk.Button(chooser, text="Select folder of 2D slices", width=30,
+        tk.Button(chooser, text="Select folder of 2D slices (.tif / .dcm)", width=34,
                   command=pick_folder).pack(pady=4)
 
     def _do_import(self, path, is_folder):
@@ -962,14 +1025,29 @@ class App:
             if raw_shape is None:
                 return  # user cancelled
 
+        is_dcm_file = not is_folder and os.path.splitext(path)[1].lower() == ".dcm"
+        dcm_voxel_size = None  # (dx, dy, dz) in mm, filled in by _load() for DICOM sources
+
         # --- load -------------------------------------------------------
         def _load():
+            nonlocal dcm_voxel_size
             if is_folder:
-                seq = imread_collection(os.path.join(path, "*.tif"))
-                if len(seq) == 0:
-                    raise ValueError("No .tif slices found in the selected folder.")
-                arr = np.stack(seq, axis=-1)
-                print(f"Loaded {len(seq)} slices via imread_collection: shape={arr.shape}")
+                dcm_files = sorted(
+                    f for f in os.listdir(path) if f.lower().endswith(".dcm"))
+                if dcm_files:
+                    arr, dcm_voxel_size = _read_dicom_series(
+                        [os.path.join(path, f) for f in dcm_files])
+                    print(f"Loaded {len(dcm_files)} DICOM slices: shape={arr.shape}")
+                else:
+                    seq = imread_collection(os.path.join(path, "*.tif"))
+                    if len(seq) == 0:
+                        raise ValueError(
+                            "No .tif or .dcm slices found in the selected folder.")
+                    arr = np.stack(seq, axis=-1)
+                    print(f"Loaded {len(seq)} slices via imread_collection: shape={arr.shape}")
+            elif is_dcm_file:
+                arr, dcm_voxel_size = _read_dicom_file(path)
+                print(f"Loaded DICOM file: shape={arr.shape}")
             elif raw_shape is not None:
                 arr = np.fromfile(path, dtype=np.dtype(raw_dtype)).reshape(raw_shape)
                 arr = np.transpose(arr, (1, 2, 0))   # (slices,H,W) → (H,W,slices)
@@ -984,6 +1062,15 @@ class App:
         if not ok:
             messagebox.showerror("Import failed", err, parent=self.root)
             return
+
+        if dcm_voxel_size is not None:
+            dx, dy, dz = dcm_voxel_size
+            messagebox.showinfo(
+                "DICOM voxel spacing",
+                f"Voxel size from DICOM header: {dx:.5g} x {dy:.5g} x {dz:.5g} mm.\n"
+                "Use this value (in metres) for 'voxel_size' fields in Metrics / "
+                "Simulations for physically correct results.",
+                parent=self.root)
 
         base_name = (os.path.basename(os.path.normpath(path))
                      if is_folder
@@ -1013,7 +1100,13 @@ class App:
 
             def _denoise():
                 import porespy as ps
-                d = ps.filters.nl_means_layered(im_float, axis=2)
+                # porespy's nl_means_layered has a bug: it loops range(im.shape[0])
+                # instead of range(swapped_shape[0]), which only happens to work for
+                # cubic volumes. Pre-move the slice axis to position 0 and call with
+                # the default axis=0 (swapaxes(im,0,0) is a no-op there) to sidestep it.
+                im_axis0 = np.moveaxis(im_float, 2, 0)
+                d = ps.filters.nl_means_layered(im_axis0, axis=0)
+                d = np.moveaxis(d, 0, 2)
                 return (d - d.min()) / (d.max() - d.min())
 
             ok, denoised, out, err = run_operation(self.root, "Denoising (NL-means)", _denoise, {})

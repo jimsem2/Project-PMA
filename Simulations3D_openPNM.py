@@ -1,16 +1,12 @@
-from tokenize import Name
 import matplotlib.pyplot as plt
 import numpy as np
 import porespy as ps
-import imageio
 import pandas as pd
 import openpnm as op
-import os
-np.random.seed(10)
 
-# Module-level state. These are populated by build_network() (called by the GUI
-# or by the __main__ block below) instead of being built at import time, so that
-# importing this module is cheap and the network can be built from any image.
+# Module-level state. Populated by build_network() (called by the GUI)
+# instead of being built at import time, so importing this module is cheap
+# and the network can be built from any image.
 im = None
 pn = None
 def build_network(image, voxel_size=1):
@@ -513,10 +509,4 @@ def simulate_invasion_percolation(network=None, inv_phase='air', def_phase='wate
     return ip, pc_data
 
 
-# ===================== MAIN EXECUTION =====================
-
-if __name__ == "__main__":
-    # Build a default network from a generated blob image when run standalone.
-    length = 60
-    build_network(ps.generators.blobs(shape=[length, length, length], porosity=0.6, blobiness=2, seed=10))
 
