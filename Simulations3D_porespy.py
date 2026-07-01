@@ -250,9 +250,19 @@ def INJECTION(im, sigma=0.01, theta=180, g=9.81, rho_nwp=1000, rho_wp=0, voxel_s
     return inj
 
 
-def TORTUOSITY(im, axis=0): # returns t_fd
+def TORTUOSITY(im, axis=0, crop_size=None):
     # im: 3D image of porous media
     # axis: axis along which tortuosity is calculated, 0 for x default, 1 for y, 2 for z
+    # crop_size: if set, crop the centre cube of this side length before solving.
+    #   tortuosity_fd allocates one network node per voxel, so images larger than
+    #   ~300^3 will exhaust RAM. Set crop_size <= 300 for large images.
+    if crop_size is not None:
+        slices = tuple(
+            slice(max(0, (s - crop_size) // 2),
+                  max(0, (s - crop_size) // 2) + min(s, crop_size))
+            for s in im.shape)
+        im = im[slices]
+        print(f"Image cropped to {im.shape} for tortuosity calculation.")
     t_fd = ps.simulations.tortuosity_fd(im, axis=axis)
     print(t_fd)
     return t_fd

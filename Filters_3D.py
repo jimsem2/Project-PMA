@@ -119,6 +119,28 @@ def TRIM_NONPERCOLATING_PATHS(im, perc_axis=0, slice=0, show_slice=True): # retu
 
     return trimmed_paths
 
+
+def CROP_CENTER(im, size=300, slice=0, show_slice=True):
+    # size: side length of the output cube (voxels); each axis is cropped symmetrically
+    # slice: axis for the 2D slice preview (0=x, 1=y, 2=z)
+    # show_slice: if True, display the centre slice of the cropped result
+    cropped_parts = []
+    for s in im.shape:
+        start = max(0, (s - size) // 2)
+        end = start + min(s, size)
+        cropped_parts.append((start, end))
+    (x0, x1), (y0, y1), (z0, z1) = cropped_parts
+    result = im[x0:x1, y0:y1, z0:z1]
+    print(f"Cropped from {im.shape} to {result.shape}.")
+    if show_slice:
+        ps.visualization.imshow(result, axis=slice, ind=int(result.shape[slice] / 2))
+        plt.gcf().canvas.manager.set_window_title("CROP CENTER")
+        plt.title(f"Cropped: {result.shape}")
+        plt.axis(False)
+        plt.show(block=False)
+    return result
+
+
 # Non-Solid Altering Filters
 
 def APPLY_CHORDS(im, spacing=1, axis=1, trim_edges=False, label=True, slice=0, show_slice=True):  # returns ac

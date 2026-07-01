@@ -559,6 +559,24 @@ def _rename_saved(out_dir, default_name, chosen_name, subdir=None):
             print(f"Warning: could not rename {default_name!r} → {target!r}: {e}")
 
 
+_LARGE_VOXELS = 50_000_000  # ≈ 370³ — threshold above which memory-intensive ops risk OOM
+
+
+def _image_size_label(parent, image):
+    """Pack an image-size info bar into parent; turns red when the image is large."""
+    if image is None:
+        return
+    total = int(np.prod(image.shape))
+    txt = (f"Current image: {image.shape[0]} × {image.shape[1]} × {image.shape[2]}"
+           f"  ({total / 1e6:.1f} M voxels)")
+    color = "#555555"
+    if total > _LARGE_VOXELS:
+        txt += "  —  ⚠ Large image: use Crop filter before memory-intensive operations."
+        color = "#b71c1c"
+    tk.Label(parent, text=txt, fg=color, font=("Segoe UI", 9, "italic"),
+             anchor="w").pack(fill="x", padx=10, pady=(4, 0))
+
+
 def run_operation(parent, title, func, kwargs, output_dir=None):
     """Run `func(**kwargs)` on the main thread behind a modal 'Processing' dialog.
 
@@ -700,6 +718,13 @@ _TT_SHOW_SLICE = "Show the 2D slice visualization"
 
 FILTER_GROUPS = [
     ("Solid Altering Filters", [
+        ("CROP_CENTER", filt.CROP_CENTER, [
+            F("size", "int", "300",
+              tooltip="Crop to a centre cube of this side length (voxels). "
+                      "Permanently replaces the working image — all subsequent steps use "
+                      "the smaller volume. Use ≤ 300 for 1000³+ images to avoid OOM errors."),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("FILL_CLOSED_PORES", filt.FILL_CLOSED_PORES, [
             F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
             F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
@@ -897,7 +922,10 @@ PSIM_SPECS = [
           tooltip="qbip = faster (binary heap); ibip = image-based"),
         F("save_excel", "bool", False, tooltip="Export capillary pressure–saturation curve to Excel")]),
     ("TORTUOSITY", psim.TORTUOSITY, [
-        F("axis", "choice_int", "0", AXIS3, tooltip="Axis along which tortuosity is calculated")]),
+        F("axis", "choice_int", "0", AXIS3, tooltip="Axis along which tortuosity is calculated"),
+        F("crop_size", "int_none", "", label="Crop size (opt.)",
+          tooltip="Crop the centre cube to this side length before solving. "
+                  "tortuosity_fd needs ~22 GB for a 1000³ image; use ≤300 for large volumes.")]),
 ]
 
 # OpenPNM phase property forms (only the properties relevant to each phase).
@@ -1083,13 +1111,22 @@ class App:
         user_inverted = False
 
         if already_binary:
+            im_binary = im3d.astype(bool)
+            poro_as_is  = float(im_binary.sum())  / im_binary.size
+            poro_invert = float((~im_binary).sum()) / im_binary.size
             messagebox.showinfo("Import",
                                 f"Image is already binary (values {unique}).\n"
-                                "No thresholding needed.", parent=self.root)
-            im_binary = im3d.astype(bool)
+                                "No thresholding needed.\n\n"
+                                f"As-is  → porosity = {poro_as_is:.3f}  (True = pore)\n"
+                                f"Inverted → porosity = {poro_invert:.3f}  (True = pore)\n\n"
+                                "PoreSpy treats True voxels as pore/void.\n"
+                                "In most CT scans bright = solid, dark = pore,\n"
+                                "so inversion is usually needed.",
+                                parent=self.root)
             if messagebox.askyesno("Invert image",
                                    "Do you want to invert the image?\n"
-                                   "(swaps pore and solid phases)",
+                                   "(swaps pore and solid phases)\n\n"
+                                   "Say Yes if pores are dark (low values) in your scan.",
                                    parent=self.root):
                 im_binary = ~im_binary
                 user_inverted = True
@@ -1149,7 +1186,7 @@ class App:
         # the user did not invert (the original file already serves as the .tif).
         skip_save = is_tif_source and already_binary and not user_inverted
         if not skip_save:
-            if already_binary:
+            if already_binary and user_inverted:
                 default_name = f"{base_name}_inverted.tif"
             elif user_inverted:
                 default_name = f"{base_name}_binary_inverted.tif"
@@ -1252,6 +1289,7 @@ class App:
             "result (or the original image if none were selected). "
             "Set a run order (1, 2, 3, ...) to select a filter; leave blank to skip. "
             "Tick 'Save file' on any non-solid filter to save its output as a separate .tif.")
+        _image_size_label(body, _original_image)
         order_values = [""] + [str(i) for i in range(1, total_filters + 1)]
         sections = []
         solid_sections = []
@@ -1412,12 +1450,15 @@ class App:
             "Tick any number of metrics, set their parameters, then click Calculate. "
             "Each section shows its printed result (green) or error (red); some also "
             "produce plots or Excel files.")
+        _image_size_label(body, self.image)
+        section_frame = tk.Frame(body)
+        section_frame.pack(fill="both", expand=True)
         sections = []
         for title, func, fields in METRIC_SPECS:
-            sec = build_section(body, title, fields, mode="multi", with_result=True)
+            sec = build_section(section_frame, title, fields, mode="multi", with_result=True)
             sec["func"] = func
             sections.append(sec)
-        grid_sections(body, sections, 2)
+        grid_sections(section_frame, sections, 2)
 
         def do_calculate():
             if not self.require_image(win):
@@ -1477,12 +1518,15 @@ class App:
             self, "PoreSpy simulations",
             "Tick any number of simulations, set their parameters, then click Simulate. "
             "Printed output (e.g. the tortuosity value) is shown in each section's box.")
+        _image_size_label(body, self.image)
+        section_frame = tk.Frame(body)
+        section_frame.pack(fill="both", expand=True)
         sections = []
         for title, func, fields in PSIM_SPECS:
-            sec = build_section(body, title, fields, mode="multi", with_result=True)
+            sec = build_section(section_frame, title, fields, mode="multi", with_result=True)
             sec["func"] = func
             sections.append(sec)
-        grid_sections(body, sections, 2)
+        grid_sections(section_frame, sections, 2)
 
         def do_simulate():
             if not self.require_image(win):
@@ -1544,6 +1588,7 @@ class App:
             "Bottom: tick any number of simulations and set their parameters. "
             "Click Simulate to build the pore network from the current image and run "
             "the ticked simulations with the chosen phase.")
+        _image_size_label(body, self.image)
 
         # Voxel size — used by snow2 to set network geometry in physical units
         vs_frame = tk.Frame(body)
