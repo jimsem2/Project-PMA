@@ -4,6 +4,8 @@
 /dist
 /__pycache__
 /RockSamples
+/.claude
+/deprecated
 
 # Generated VTI output (large binary, keep out of git)
 *.vti
