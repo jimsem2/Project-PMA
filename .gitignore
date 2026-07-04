@@ -1,2 +1,10 @@
 /.venv
 /.vscode
+/build
+/dist
+/__pycache__
+/RockSamples
+
+# Generated VTI output (large binary, keep out of git)
+*.vti
+ui/UI_output/

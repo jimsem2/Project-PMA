@@ -1,0 +1,27 @@
+Key notes:
+
+Python 3.12 is recommended (3.14+ has compatibility issues with porespy's
+dependencies). If the machine has Python 3.13+, create a Python 3.12 venv:
+
+    py -3.12 -m venv .venv
+    .venv\Scripts\activate
+    pip install -r doc\requirements.txt
+
+Project layout (after the July 2026 restructure):
+
+    Project\
+      ui\      Fable_UI.py   <- modern single-window app ("Porous Media Analysis")
+               app_gui.py    <- original wizard-style GUI
+      logic\   Generators_3D.py, Filters_3D.py, Metrics_3D.py,
+               Simulations3D_porespy.py, Simulations3D_openPNM.py
+      assets\  Icon.png, icon.ico
+      doc\     these notes + requirements.txt
+
+Run either UI from the project root (both bootstrap sys.path themselves, so
+the working directory does not matter):
+
+    python ui\Fable_UI.py
+    python ui\app_gui.py
+
+Outputs default to ui\UI_output (created automatically). When a packaged
+.exe is used instead, the UI_output folder is created next to the .exe.
