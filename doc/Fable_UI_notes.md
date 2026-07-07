@@ -40,12 +40,37 @@ scientific lives in this file.
   viridis LUT scaled to `[vmin, vmax]` (inf/NaN-safe).
 - `slice_to_photo` / `png_fit_photo`: Pillow-based scaling (NEAREST for
   voxel slices, LANCZOS for plots) with a Tk zoom/subsample fallback if
-  Pillow is missing.
+  Pillow is missing. `slice_to_photo` flips the plane vertically (`plane[::-1]`)
+  so it draws **bottom-origin** — the first plane axis increases upward, like
+  ParaView / matplotlib `origin="lower"`. Without it, gravity packings looked
+  upside-down (spheres appeared to pile at the top of the thumbnail/slice
+  viewer). Both the sidebar thumbnail and the `SliceViewer` go through here, so
+  they stay consistent.
 - `read_vti(path)`: minimal reader for the `.vti` files written by
   `save_results_vtk` in `logic/Simulations3D_porespy.py` (pyevtk raw-appended
-  format, UInt64 block headers, Fortran-ravelled arrays). It applies the
-  inverse of the writer's `(2, 0, 1)` transpose so arrays come back in the
-  app's `(x, y, z)` orientation, and casts 0/1 float fields to bool.
+  format, UInt64 block headers, Fortran-ravelled arrays). The writer now stores
+  arrays in the app's `(x, y, z)` order directly (pyevtk maps array axis 0/1/2 →
+  VTK X/Y/Z), so the reader just Fortran-reshapes to `(x, y, z)` with **no**
+  transpose, and casts 0/1 float fields to bool. (Pre-July-2026 `.vti` files
+  were written transposed `(2, 0, 1)` and will open swapped — regenerate them.)
+
+## Volume axis convention (files ↔ memory)
+
+Working images live in memory as `(x, y, z)` with **app-x = ParaView X**. All
+external volume I/O maps to that so a generated/loaded image keeps the same
+axes when opened in ParaView:
+
+- **TIFF** (`imageio.volread`/`volsave`) — files are `(slices, rows, cols) =
+  (z, y, x)`, so read and write both `transpose(2, 1, 0)`. Folder-of-slices and
+  DICOM-series loaders (`np.stack(..., axis=-1)`) add a `(1, 0, 2)` to reach the
+  same `(x, y, z)`.
+- **VTI** (pyevtk) — passed through unchanged; see `read_vti` above.
+
+This was corrected in **July 2026**: everything previously used
+`(2, 0, 1)` / `(1, 2, 0)`, which is internally self-consistent but silently
+swaps X↔Y versus ParaView (invisible on symmetric shapes, obvious on
+`pseudo_gravity_packing`). Because the swap was uniform, the fix had to change
+every read *and* write together — files written by the old code open swapped.
 
 ## The worker thread & Cancel
 

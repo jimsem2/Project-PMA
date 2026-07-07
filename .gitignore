@@ -9,4 +9,6 @@ __pycache__/
 
 # Generated VTI output (large binary, keep out of git)
 *.vti
+*.tif
+*.vtp
 ui/UI_output/

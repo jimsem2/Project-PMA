@@ -682,7 +682,7 @@ def _read_dicom_file(path):
     if arr.ndim == 2:
         arr = arr[:, :, np.newaxis]
     elif arr.ndim == 3:
-        arr = np.transpose(arr, (1, 2, 0))
+        arr = np.transpose(arr, (2, 1, 0))
     else:
         raise ValueError(f"Unsupported DICOM pixel array shape {arr.shape}")
     return arr, _dicom_voxel_size(ds)
@@ -695,7 +695,9 @@ def _read_dicom_series(paths):
     except Exception:
         pass
     slices = [_dicom_pixels(ds) for ds in datasets]
-    return np.stack(slices, axis=-1), _dicom_voxel_size(datasets[0])
+    # each slice is (rows, cols) = (y, x); stack along z then swap to (x, y, z)
+    vol = np.transpose(np.stack(slices, axis=-1), (1, 0, 2))
+    return vol, _dicom_voxel_size(datasets[0])
 
 
 # ===========================================================================
@@ -759,6 +761,10 @@ def slice_to_photo(plane, max_w=430, max_h=None, vmin=None, vmax=None):
     voxels stay crisp."""
     if max_h is None:
         max_h = max_w
+    # Draw with the origin at the bottom (like ParaView / matplotlib origin="lower")
+    # so the first plane axis increases upward — gravity packings then visibly
+    # settle downward instead of appearing upside-down.
+    plane = np.asarray(plane)[::-1]
     rgb = _rgb_from_plane(plane, vmin, vmax)
     h, w = plane.shape
     scale = min(max_w / w, max_h / h)
@@ -803,8 +809,8 @@ def png_fit_photo(png_bytes, max_w, max_h):
 # ===========================================================================
 #  Minimal .vti reader for files written by pyevtk's imageToVTK
 #  (raw-appended encoding, UInt64 block headers, Fortran-ravelled arrays).
-#  save_results_vtk() writes arrays transposed (2, 0, 1) from the app's
-#  (x, y, z) order, so the inverse transpose (1, 2, 0) is applied on read.
+#  save_results_vtk() writes arrays in the app's (x, y, z) order directly
+#  (pyevtk maps array axis 0/1/2 -> VTK X/Y/Z), so no transpose is needed on read.
 # ===========================================================================
 _VTK_DTYPES = {
     "Float64": "f8", "Float32": "f4",
@@ -852,8 +858,7 @@ def read_vti(path):
         if n != shape[0] * shape[1] * shape[2]:
             continue                       # skip non point-data arrays
         arr = np.frombuffer(raw, dtype=dtype, count=n, offset=off + 8)
-        arr = arr.reshape(shape, order="F")
-        arr = np.transpose(arr, (1, 2, 0))   # undo save_results_vtk transpose
+        arr = arr.reshape(shape, order="F")   # already in app (x, y, z) order
         vals = np.unique(arr)
         if vals.size <= 2 and set(vals.tolist()) <= {0.0, 1.0}:
             arr = arr.astype(bool)           # geometry-like field
@@ -1950,7 +1955,7 @@ class FableApp:
 
         def _save():
             import imageio.v2 as iio
-            arr = np.transpose(self.image.astype(np.uint8) * 255, (2, 0, 1))
+            arr = np.transpose(self.image.astype(np.uint8) * 255, (2, 1, 0))
             iio.volsave(path, arr)
             print(f"Volume saved: {path}")
         self.submit("Saving volume", _save, on_done=lambda ok, *a: None,
@@ -2092,18 +2097,19 @@ class FableApp:
                     seq = imread_collection(os.path.join(path, "*.tif"))
                     if len(seq) == 0:
                         raise ValueError("No .tif or .dcm slices found in the folder.")
-                    arr = np.stack(seq, axis=-1)
+                    # slices are (rows, cols) = (y, x); stack to z then swap to (x, y, z)
+                    arr = np.transpose(np.stack(seq, axis=-1), (1, 0, 2))
                     print(f"Loaded {len(seq)} slices: shape={arr.shape}")
             elif is_dcm_file:
                 arr, state["dcm_voxel_size"] = _read_dicom_file(path)
                 print(f"Loaded DICOM file: shape={arr.shape}")
             elif raw_shape is not None:
                 arr = np.fromfile(path, dtype=np.dtype(raw_dtype)).reshape(raw_shape)
-                arr = np.transpose(arr, (1, 2, 0))
+                arr = np.transpose(arr, (2, 1, 0))
                 print(f"Loaded .raw image: shape={arr.shape}, dtype={raw_dtype}")
             else:
                 arr = iio.volread(path)
-                arr = np.transpose(arr, (1, 2, 0))
+                arr = np.transpose(arr, (2, 1, 0))
                 print(f"Loaded 3D image: shape={arr.shape}")
             return arr
 
@@ -2283,7 +2289,7 @@ class FableApp:
 
                 def _save():
                     import imageio.v2 as iio
-                    arr = np.transpose(im_binary.astype("uint8") * 255, (2, 0, 1))
+                    arr = np.transpose(im_binary.astype("uint8") * 255, (2, 1, 0))
                     iio.volsave(os.path.join(out_dir, save_name), arr)
                     print(f"Binary image saved: {os.path.join(out_dir, save_name)}")
                 self.submit("Saving binary image", _save, no_figs=True)
@@ -2478,7 +2484,7 @@ class FableApp:
                     arr = (b.astype(np.uint8) * 255 if b.dtype == bool
                            else b.astype(np.float32))
                     iio.volsave(os.path.join(out_dir, save_name),
-                                np.transpose(arr, (2, 0, 1)))
+                                np.transpose(arr, (2, 1, 0)))
                     print(f"Saved {save_name}")
                 self.submit("Saving filtered volume", _save, no_figs=True)
             elif nsa_to_save:
@@ -2510,7 +2516,7 @@ class FableApp:
                                if result.dtype == bool
                                else result.astype(np.float32))
                         iio.volsave(os.path.join(out_dir, nsa_name),
-                                    np.transpose(arr, (2, 0, 1)))
+                                    np.transpose(arr, (2, 1, 0)))
                         print(f"Saved {nsa_name}")
                     self.submit(f"Saving {nsa_name}", _save, no_figs=True)
                 if not ok:
@@ -3138,7 +3144,7 @@ class SliceViewer(tk.Frame):
             arr = iio.volread(path)
             if arr.ndim != 3:
                 raise ValueError(f"Not a 3D volume: shape {arr.shape}")
-            arr = np.transpose(arr, (1, 2, 0))
+            arr = np.transpose(arr, (2, 1, 0))
             vals = np.unique(arr)
             if vals.size <= 2:
                 arr = arr != vals.min()      # binary: bright = pore

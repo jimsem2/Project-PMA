@@ -249,6 +249,14 @@ by both `DRAINAGE` and `IMBIBITION` since they share the same parameter set.
     none are found; a single `.dcm` file is handled by the `elif is_dcm_file`
     branch ahead of the pre-existing `.raw` and generic `imageio.volread`
     branches.
+  - **Axis convention (fixed July 2026):** every load path returns the working
+    image as `(x, y, z)` with **app-x = ParaView X**. `imageio.volread`, the
+    single-DICOM and `.raw` paths all `transpose(2, 1, 0)`; the folder-stack
+    and DICOM-series `np.stack(..., axis=-1)` loaders add a `(1, 0, 2)`; and the
+    binary `.tif` save (`_ALWAYS_SAVES` path) writes with `(2, 1, 0)`. These all
+    used to be `(2, 0, 1)` / `(1, 2, 0)`, which silently swapped X↔Y versus
+    ParaView (obvious on `pseudo_gravity_packing`). This mirrors the identical
+    fix in `Fable_UI.py` — see `doc/Fable_UI_notes.md` "Volume axis convention".
   - When a DICOM source was loaded, a `messagebox.showinfo` shows the voxel
     spacing from the file header (in mm) and reminds the user to convert it
     to **metres** when entering `voxel_size` elsewhere in the GUI — this

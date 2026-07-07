@@ -28,7 +28,7 @@ def BLOBS(shape, porosity=0.5, blobiness=1, invert=False):  #returns im
     ax.set_title("BLOBS")
     plt.show(block=False)
 
-    imageio.volsave("Blobs.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 0, 1)))
+    imageio.volsave("Blobs.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 1, 0)))
     return im
 
 
@@ -58,7 +58,7 @@ def CYLINDERS(shape, radius=4, ncylinders=25, porosity=0.5, cyl_length=None, phi
     ax.set_title("CYLINDERS")
     plt.show(block=False)
 
-    imageio.volsave("Cylinders.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 0, 1)))
+    imageio.volsave("Cylinders.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 1, 0)))
     return im
 
 
@@ -80,7 +80,7 @@ def OVERLAPPING_SPHERES(shape, radius=3, porosity=0.5, maxiter=10, invert=False)
     ax.axis(False)
     plt.show(block=False)
 
-    imageio.volsave("Overlapping_Spheres.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 0, 1)))
+    imageio.volsave("Overlapping_Spheres.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 1, 0)))
     return im
 
 
@@ -105,7 +105,7 @@ def POLYDISPERSE_SPHERES(shape, porosity=0.5, r_min=3, nbins=5, loc=10, scale=5,
     ax.axis(False)
     plt.show(block=False)
     
-    imageio.volsave("Polydisperse_Spheres.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 0, 1)))
+    imageio.volsave("Polydisperse_Spheres.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 1, 0)))
     return im
 
 
@@ -136,7 +136,7 @@ def PSEUDO_ELECTROSTATIC_PACKING(shape, r=3, clearance=0, protrusion=0, maxiter=
     ax.axis(False)
     plt.show(block=False)
 
-    imageio.volsave("Pseudo_Electrostatic_Packing.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 0, 1)))
+    imageio.volsave("Pseudo_Electrostatic_Packing.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 1, 0)))
     return im
 
 
@@ -155,12 +155,12 @@ def PSEUDO_GRAVITY_PACKING(shape, r=5, maxiter=200, clearance=0, pk_axis=0, inve
         im = ~im
     fig, ax = plt.subplots(1, figsize=[6, 6])
     fig.canvas.manager.set_window_title("PSEUDO GRAVITY PACKING")
-    ax.imshow(ps.visualization.show_3D(im), interpolation='none', origin='lower')
+    ax.imshow(ps.visualization.show_3D(im), interpolation='none')
     ax.set_title("PSEUDO GRAVITY PACKING")
     ax.axis(False)
     plt.show(block=False)
 
-    imageio.volsave("Pseudo_Gravity_Packing.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 0, 1)))
+    imageio.volsave("Pseudo_Gravity_Packing.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 1, 0)))
     return im
 
 
@@ -182,7 +182,7 @@ def VORONOI_EDGES(shape, thickness=3, ncells=50, flat_faces = True, invert=False
     ax.axis(False)
     plt.show(block=False)
 
-    imageio.volsave("Voronoi_Edges.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 0, 1)))
+    imageio.volsave("Voronoi_Edges.tif", np.transpose(np.array(im.astype("uint8") * 255), (2, 1, 0)))
     return im
 
 

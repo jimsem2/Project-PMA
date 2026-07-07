@@ -19,9 +19,11 @@ def save_results_vtk(filename, im, res):
     Saves multiple fields in a single file: binary geometry, invasion sequence,
     non-wetting phase saturation, and capillary pressure.
     """
-    # pyevtk expects (nz, ny, nx) C-order; porespy images are (nx, ny, nz) → transpose
+    # pyevtk maps array axis 0/1/2 -> VTK X/Y/Z, and porespy images are already
+    # (nx, ny, nz) = (x, y, z), so pass them through unchanged. ParaView then
+    # shows app-x on X, app-y on Y, app-z on Z.
     def _vtk(arr):
-        return np.ascontiguousarray(np.transpose(arr, (2, 0, 1)))
+        return np.ascontiguousarray(arr)
     geometry = _vtk(im.astype(np.float64))
     seq = _vtk(res.im_seq.astype(np.float64))
     snwp = _vtk(res.im_snwp.astype(np.float64))

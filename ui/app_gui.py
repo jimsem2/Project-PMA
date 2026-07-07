@@ -372,7 +372,7 @@ def _read_dicom_file(path):
     if arr.ndim == 2:
         arr = arr[:, :, np.newaxis]
     elif arr.ndim == 3:
-        arr = np.transpose(arr, (1, 2, 0))   # (frames,H,W) → (H,W,frames)
+        arr = np.transpose(arr, (2, 1, 0))   # (frames,H,W)=(z,y,x) → (x,y,z)
     else:
         raise ValueError(f"Unsupported DICOM pixel array shape {arr.shape}")
     return arr, _dicom_voxel_size(ds)
@@ -388,7 +388,8 @@ def _read_dicom_series(paths):
     except Exception:
         pass  # keep filename-sorted order (paths were pre-sorted)
     slices = [_dicom_pixels(ds) for ds in datasets]
-    arr = np.stack(slices, axis=-1)  # (H, W, n_slices)
+    # slices are (rows, cols) = (y, x); stack to z then swap to (x, y, z)
+    arr = np.transpose(np.stack(slices, axis=-1), (1, 0, 2))
     return arr, _dicom_voxel_size(datasets[0])
 
 
@@ -1198,18 +1199,19 @@ class App:
                     if len(seq) == 0:
                         raise ValueError(
                             "No .tif or .dcm slices found in the selected folder.")
-                    arr = np.stack(seq, axis=-1)
+                    # slices are (rows, cols) = (y, x); stack to z then swap to (x, y, z)
+                    arr = np.transpose(np.stack(seq, axis=-1), (1, 0, 2))
                     print(f"Loaded {len(seq)} slices via imread_collection: shape={arr.shape}")
             elif is_dcm_file:
                 arr, dcm_voxel_size = _read_dicom_file(path)
                 print(f"Loaded DICOM file: shape={arr.shape}")
             elif raw_shape is not None:
                 arr = np.fromfile(path, dtype=np.dtype(raw_dtype)).reshape(raw_shape)
-                arr = np.transpose(arr, (1, 2, 0))   # (slices,H,W) → (H,W,slices)
+                arr = np.transpose(arr, (2, 1, 0))   # (slices,H,W)=(z,y,x) → (x,y,z)
                 print(f"Loaded .raw image: shape={arr.shape}, dtype={raw_dtype}")
             else:
                 arr = imageio.volread(path)
-                arr = np.transpose(arr, (1, 2, 0))
+                arr = np.transpose(arr, (2, 1, 0))
                 print(f"Loaded 3D image via volread: shape={arr.shape}")
             return arr
 
@@ -1323,7 +1325,7 @@ class App:
             if out_dir:
                 save_name = chosen_name or default_name
                 try:
-                    arr = np.transpose(im_binary.astype("uint8") * 255, (2, 0, 1))
+                    arr = np.transpose(im_binary.astype("uint8") * 255, (2, 1, 0))
                     imageio.volsave(os.path.join(out_dir, save_name), arr)
                     messagebox.showinfo("Saved",
                                         f"Binary image saved as:\n"
@@ -1528,7 +1530,7 @@ class App:
                 try:
                     arr = base.astype(np.uint8) * 255 if base.dtype == bool else base.astype(np.float32)
                     _iio.volsave(os.path.join(out_dir, save_name),
-                                 np.transpose(arr, (2, 0, 1)))
+                                 np.transpose(arr, (2, 1, 0)))
                 except Exception as _e:
                     messagebox.showwarning("Save warning",
                                            f"Could not save {save_name}:\n{_e}", parent=win)
@@ -1559,7 +1561,7 @@ class App:
                         arr = (result.astype(np.uint8) * 255 if result.dtype == bool
                                else result.astype(np.float32))
                         _iio.volsave(os.path.join(out_dir, nsa_name),
-                                     np.transpose(arr, (2, 0, 1)))
+                                     np.transpose(arr, (2, 1, 0)))
                     except Exception as _e:
                         messagebox.showwarning("Save warning",
                                                f"Could not save {nsa_name}:\n{_e}", parent=win)

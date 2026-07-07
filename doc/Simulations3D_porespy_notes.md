@@ -34,10 +34,17 @@ pore network instead.
 ## L12-34 — `save_results_vtk`
 Exports four fields (binary geometry, invasion sequence, non-wetting-phase
 saturation, capillary pressure) into a single `.vti` file for ParaView.
-- L18-20 (`_vtk`): PoreSpy arrays are `(nx, ny, nz)`, but `pyevtk`'s
-  `imageToVTK` expects C-order `(nz, ny, nx)`, so every field is transposed
-  `(2, 0, 1)` and made contiguous before export. Forgetting this transpose is
-  a common source of "my VTK file looks rotated/sheared in ParaView" bugs.
+- `_vtk`: PoreSpy arrays are already `(nx, ny, nz) = (x, y, z)`, and `pyevtk`'s
+  `imageToVTK` maps array axis 0/1/2 → VTK **X/Y/Z**, so each field is passed
+  through **unchanged** (only made contiguous). ParaView then shows app-x on X,
+  app-y on Y, app-z on Z.
+  - **History (fixed July 2026):** this used to transpose `(2, 0, 1)` under the
+    mistaken belief that pyevtk wants `(nz, ny, nx)`. That transpose actually
+    produced `(nz, nx, ny)`, which put app-x onto ParaView's **Y** axis — the
+    cause of the "pseudo-gravity settles along the wrong axis in ParaView" bug.
+    The matching reader `read_vti` in `Fable_UI.py` was updated in lockstep
+    (it no longer applies an inverse transpose). Any `.vti` written *before*
+    this fix opens transposed — regenerate it.
 
 ## L37-79 — `plot_results`
 Builds the 3-panel mid-slice figure (sequence map / saturation map /
