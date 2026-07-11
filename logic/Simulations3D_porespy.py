@@ -262,6 +262,16 @@ def TORTUOSITY(im, axis=0, crop_size=None):
     # crop_size: if set, crop the centre cube of this side length before solving.
     #   tortuosity_fd allocates one network node per voxel, so images larger than
     #   ~300^3 will exhaust RAM. Set crop_size <= 300 for large images.
+    #
+    # NOTE — this is the VOXEL (image-based) diffusive tortuosity: it solves a
+    # finite-difference Laplace/Fickian diffusion problem on EVERY pore voxel of
+    # the image and reports the tortuosity factor directly. It is a different
+    # computation from the NETWORK diffusive tortuosity printed by
+    # Simulations3D_openPNM.simulate_fickian_diffusion (which solves diffusion on
+    # the reduced SNOW2 pore network and derives tau = porosity*D_bulk/D_eff).
+    # Because the voxel method keeps the full geometry while the network method
+    # idealises it, the two values normally differ; the voxel result is usually
+    # the more faithful of the two, at much higher memory cost.
     if crop_size is not None:
         slices = tuple(
             slice(max(0, (s - crop_size) // 2),
@@ -270,6 +280,7 @@ def TORTUOSITY(im, axis=0, crop_size=None):
         im = im[slices]
         print(f"Image cropped to {im.shape} for tortuosity calculation.")
     t_fd = ps.simulations.tortuosity_fd(im, axis=axis)
+    print("Voxel (finite-difference) tortuosity — solved on the full image:")
     print(t_fd)
     return t_fd
 

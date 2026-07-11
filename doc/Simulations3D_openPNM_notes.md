@@ -117,27 +117,55 @@ Solves single-phase pressure-driven (Darcy-scale) flow.
   to pores** by averaging the velocities of each pore's adjacent throats
   (L182-191) purely so ParaView can colour pore-glyph spheres by velocity —
   OpenPNM only natively associates velocity with throats.
-- L194-222: Darcy permeability `K = Q·μ·L / (A·ΔP)` is computed **two ways**
-  and cross-checked: L205-212 uses OpenPNM's own geometric area/length
-  estimation (`get_domain_area`/`get_domain_length`, can fail on some
-  geometries, hence the `try/except`), L214-221 falls back to a
-  coordinate-extent-based estimate that always works. The geometric estimate
-  is preferred when available (L222).
-- L224-227: results are exported to `openpnm_stokes_flow.vtp`.
+- Darcy permeability `K = Q·μ·L / (A·ΔP)` is now computed **three ways** and
+  all three are printed. The Stokes problem is solved once — `Q` and `ΔP` are
+  identical for all three — so the only thing that changes `K` is how the
+  domain cross-section `A` and length `L` are measured on the irregular,
+  face-less extracted network:
+  1. **image-based (recommended, primary):** the true sample cuboid,
+     `A = (N_y·vs)(N_z·vs)`, `L = N_x·vs`, from `image_domain_dimensions()`.
+     This is the physical definition a lab permeameter uses.
+  2. **coordinate-based:** bounding box of pore *centroids* — robust, but
+     systematically off by ~one pore radius because centroids never reach the
+     true faces.
+  3. **geometric:** OpenPNM `get_domain_area`/`get_domain_length` (convex hull
+     of the face pores). Physically motivated but fragile — it under-covers the
+     face (→ K too high) and can fail, hence the `try/except`. **Sanity check
+     only.**
+  The returned/primary `K` is the image-based value (coordinate-based if the
+  image size is unavailable). The three can differ by tens of percent, more for
+  thin/coarse networks; this is a normalisation ambiguity, not a physics one.
+- **Updated July 2026** — previously only the geometric and coordinate methods
+  were computed and the *geometric* one was preferred; the image-based value
+  (via the new module global `_VOXEL_SIZE`, set in `build_network`) was added
+  as the physical primary.
+- results are exported to `openpnm_stokes_flow.vtp`.
 
 ## L232-307 — `simulate_fickian_diffusion`
 Solves steady-state diffusion (no advection) — structurally a mirror of
 `simulate_stokes_flow` but with concentration boundary conditions instead of
 pressure (L248-249) and `FickianDiffusion` instead of `StokesFlow`.
-- L270-295: effective diffusivity `D_eff = J·L / (A·ΔC)` is computed with the
-  same two-method (geometric / coordinate-based) cross-check pattern as the
-  permeability calculation above.
-- L297-300: **tortuosity** is derived from `D_eff` via
-  `tau = D_bulk · porosity / D_eff` — this is the network-based counterpart
-  to `Simulations3D_porespy.py`'s `TORTUOSITY` (which computes it directly
-  from the voxel image via finite differences); comparing the two values is
-  a useful sanity check between the two simulation approaches. The porosity
-  is computed from the module-level `im` global set by `build_network()`.
+- effective diffusivity `D_eff = J·L / (A·ΔC)` is computed with the **same
+  three-method** (image-based / coordinate / geometric) scheme as the
+  permeability above, and the **image-based** value is the primary/returned one.
+- **Two distinct tortuosities.** This module and `Simulations3D_porespy.py`
+  each compute a tortuosity, and they are *not* the same quantity:
+  - **Network diffusive tortuosity factor** (here): `tau = porosity · D_bulk /
+    D_eff`, derived from the network `D_eff` above. It measures path
+    lengthening/constriction on the *reduced SNOW2 pore network*. Because it is
+    inversely proportional to `D_eff`, it inherits the A/L normalisation
+    ambiguity, so it is printed for the image-based (physical) normalisation and
+    — for transparency — also for the geometric one. The porosity comes from the
+    module-level `im` global set by `build_network()`.
+  - **Voxel (finite-difference) tortuosity** (`Simulations3D_porespy.TORTUOSITY`
+    → `ps.simulations.tortuosity_fd`): solves Laplace/Fickian diffusion on
+    *every voxel* of the image directly. It keeps the full geometry (no network
+    idealisation) and is usually the more faithful of the two, at much higher
+    memory cost.
+  The two normally disagree; comparing them is a legitimate cross-check between
+  the network and voxel approaches, not a contradiction. Both functions now
+  print an explicit note stating which tortuosity they report and how it differs
+  from the other.
 
 ## L310-383 — `simulate_advection_diffusion`
 Combines flow and diffusion (a solute being both carried by and diffusing

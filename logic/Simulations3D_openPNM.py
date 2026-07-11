@@ -13,14 +13,19 @@ plt.rcParams['ytick.minor.visible'] = True
 # and the network can be built from any image.
 im = None
 pn = None
+_VOXEL_SIZE = None   # metres per voxel of the current image; set by build_network
 def build_network(image, voxel_size=1):
     """Build an OpenPNM network from a PoreSpy binary image.
 
     Stores the image and network in module globals (im, pn) so the transport
     functions below can reference them as defaults, and returns the network.
+    The voxel size is also stored (``_VOXEL_SIZE``) so the transport functions
+    can recover the true physical dimensions of the sample cuboid (image shape
+    x voxel size) for the recommended, image-based normalisation of K / D_eff.
     """
-    global im, pn
+    global im, pn, _VOXEL_SIZE
     im = image
+    _VOXEL_SIZE = voxel_size
 
     im_snow2 = ps.networks.snow2(image, voxel_size=voxel_size)
     pn = op.io.network_from_porespy(im_snow2.network)
@@ -64,6 +69,26 @@ def get_axis_faces(axis):
     if axis not in AXIS_MAP:
         raise ValueError(f"Unknown axis '{axis}'. Choose 'x', 'y', or 'z'.")
     return AXIS_MAP[axis]
+
+
+def image_domain_dimensions(coord_idx):
+    """Physical cross-sectional area A (m^2) and length L (m) of the sample,
+    taken from the *true* image cuboid: L = N_axis * voxel_size and
+    A = product of the two perpendicular (N * voxel_size) extents.
+
+    This is the physically correct normalisation for Darcy permeability and
+    effective diffusivity — it is exactly the macroscopic sample cross-section
+    a laboratory permeameter uses, and the image is a clean rectangular block
+    of known size (unlike the irregular extracted network). Returns (A, L), or
+    (None, None) if the image / voxel size are unknown (e.g. a network was
+    passed in without going through build_network).
+    """
+    if im is None or not _VOXEL_SIZE:
+        return None, None
+    perp = [i for i in range(3) if i != coord_idx]
+    L = im.shape[coord_idx] * _VOXEL_SIZE
+    A = float(np.prod([im.shape[p] * _VOXEL_SIZE for p in perp]))
+    return A, L
 
 # Create and add a phase to the network
 
@@ -210,35 +235,56 @@ def simulate_stokes_flow(network=None, chosen_phase='water', axis="x", inlet_pre
     pore_vel = np.where(counts > 0, pore_vel / counts, 0.0)
     phase["pore.velocity"] = pore_vel
 
-    # Darcy permeability: K = Q * mu * L / (A * dP)
+    # ---- Darcy permeability: K = Q * mu * L / (A * dP) --------------------
+    # The Stokes problem is solved ONCE: Q (flow rate) and delta_P are the same
+    # for every value below. The only thing that changes K is how the domain
+    # cross-section A and length L are measured — a genuinely ambiguous choice
+    # for an irregular, image-extracted network with no flat faces. Three
+    # estimates are reported; they can differ by tens of percent (or more for
+    # thin / coarse networks). See the note printed after them.
     mu = phase["pore.viscosity"].mean()
     delta_P = inlet_pressure - outlet_pressure
     _D  = 9.869233e-13   # 1 Darcy in m²
     _mD = 9.869233e-16   # 1 mD in m²
+    _ax = coord_idx
+    _perp = [i for i in range(3) if i != _ax]
+    coords = pn["pore.coords"]
 
-    def _fmt_K(label, K_val):
+    def _report_K(label, A, L):
+        K_val = Q * mu * L / (A * delta_P)
         print(f"  Darcy permeability [{label}]:")
+        print(f"    A = {A:.5e} m²   L = {L:.5e} m")
         print(f"    K = {K_val:.5e} m²  |  {K_val/_D:.5e} D  |  {K_val/_mD:.5e} mD")
+        return K_val
 
-    # Method 1 — OpenPNM geometric estimation (uses boundary pore positions)
+    # (1) Image-based — RECOMMENDED. True sample cuboid dimensions from the
+    #     image (N_voxels * voxel_size); matches how a lab permeameter defines K.
+    A_img, L_img = image_domain_dimensions(_ax)
+    K_img = _report_K("image-based — true sample dimensions (RECOMMENDED)",
+                      A_img, L_img) if A_img is not None else None
+
+    # (2) Coordinate-based — robust approximation. Bounding box of pore
+    #     centroids; systematically off by ~one pore radius (centroids do not
+    #     reach the true image faces) but never fails.
+    L_coord = abs(coords[outlet_pores, _ax].mean() - coords[inlet_pores, _ax].mean())
+    A_coord = float(np.prod([(coords[:, p].max() - coords[:, p].min()) for p in _perp]))
+    K_coord = _report_K("coordinate-based — pore-centroid bounding box", A_coord, L_coord)
+
+    # (3) Geometric — OpenPNM get_domain_area/length (convex hull of face pores).
+    #     Physically motivated but fragile: it under-covers the true face and
+    #     can be badly wrong for sparse networks. Use only as a sanity check.
     try:
         A_geo = op.topotools.get_domain_area(pn, inlets=inlet_pores, outlets=outlet_pores)
         L_geo = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
-        K_geo = Q * mu * L_geo / (A_geo * delta_P)
-        _fmt_K("geometric method — area & length from boundary pores", K_geo)
+        _report_K("geometric — OpenPNM get_domain_area/length (sanity check only)",
+                  A_geo, L_geo)
     except Exception as _e:
         print(f"  Darcy permeability [geometric method]: could not compute ({_e})")
-        K_geo = None
 
-    # Method 2 — coordinate-based estimation (always works)
-    _ax = {"x": 0, "y": 1, "z": 2}[axis]
-    _perp = [i for i in range(3) if i != _ax]
-    coords = pn["pore.coords"]
-    L_coord = abs(coords[outlet_pores, _ax].mean() - coords[inlet_pores, _ax].mean())
-    A_coord = np.prod([(coords[:, p].max() - coords[:, p].min()) for p in _perp])
-    K_coord = Q * mu * L_coord / (A_coord * delta_P)
-    _fmt_K("coordinate-based estimation (L and A from pore coordinate extents)", K_coord)
-    K = K_geo if K_geo is not None else K_coord
+    # Primary value: image-based when available, else the robust coordinate one.
+    K = K_img if K_img is not None else K_coord
+    print(f"  -> Reported permeability K = {K:.5e} m² "
+          f"({'image-based' if K_img is not None else 'coordinate-based'}).")
 
     # Save to VTK for ParaView (skipped when the caller exports the whole project once).
     if save_vtk:
@@ -287,37 +333,69 @@ def simulate_fickian_diffusion(network=None, chosen_phase='water', axis="x", inl
     print(f"Total diffusive rate through outlet ({axis}-axis): {diff_rate[0]:.5e}  [{c_unit}]  "
           f"(negative = flux exiting domain, magnitude = {J:.5e})")
 
-    # Effective diffusivity: D_eff = J * L / (A * dC)
+    # ---- Effective diffusivity: D_eff = J * L / (A * dC) ------------------
+    # As with permeability, the diffusion problem is solved ONCE (J and delta_C
+    # are fixed); the three values below differ only in how the domain
+    # cross-section A and length L are measured. See the note after them.
     D_bulk = phase["pore.diffusivity"].mean()
     delta_C = inlet_concentration - outlet_concentration
+    _ax = coord_idx
+    _perp = [i for i in range(3) if i != _ax]
+    _coords = pn["pore.coords"]
 
-    def _fmt_D(label, D_val):
-        print(f"  Effective diffusivity [{label}]: {D_val:.5e} m²/s")
+    def _report_D(label, A, L):
+        D_val = J * L / (A * delta_C)
+        print(f"  Effective diffusivity [{label}]:")
+        print(f"    A = {A:.5e} m²   L = {L:.5e} m   D_eff = {D_val:.5e} m²/s")
+        return D_val
 
-    # Method 1 — OpenPNM geometric estimation
+    # (1) Image-based — RECOMMENDED (true sample cuboid dimensions).
+    A_img, L_img = image_domain_dimensions(_ax)
+    D_eff_img = _report_D("image-based — true sample dimensions (RECOMMENDED)",
+                          A_img, L_img) if A_img is not None else None
+
+    # (2) Coordinate-based — robust approximation (pore-centroid bounding box).
+    L_coord = abs(_coords[outlet_pores, _ax].mean() - _coords[inlet_pores, _ax].mean())
+    A_coord = float(np.prod([(_coords[:, p].max() - _coords[:, p].min()) for p in _perp]))
+    D_eff_coord = _report_D("coordinate-based — pore-centroid bounding box", A_coord, L_coord)
+
+    # (3) Geometric — OpenPNM get_domain_area/length (sanity check only).
     try:
         A_geo = op.topotools.get_domain_area(pn, inlets=inlet_pores, outlets=outlet_pores)
         L_geo = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
-        D_eff_geo = J * L_geo / (A_geo * delta_C)
-        _fmt_D("geometric method — area & length from boundary pores", D_eff_geo)
+        D_eff_geo = _report_D("geometric — OpenPNM get_domain_area/length (sanity check only)",
+                              A_geo, L_geo)
     except Exception as _e:
         print(f"  Effective diffusivity [geometric method]: could not compute ({_e})")
         D_eff_geo = None
 
-    # Method 2 — coordinate-based estimation (always works)
-    _ax = {"x": 0, "y": 1, "z": 2}[axis]
-    _perp = [i for i in range(3) if i != _ax]
-    _coords = pn["pore.coords"]
-    L_coord = abs(_coords[outlet_pores, _ax].mean() - _coords[inlet_pores, _ax].mean())
-    A_coord = np.prod([(_coords[:, p].max() - _coords[:, p].min()) for p in _perp])
-    D_eff_coord = J * L_coord / (A_coord * delta_C)
-    _fmt_D("coordinate-based estimation (L and A from pore coordinate extents)", D_eff_coord)
-    D_eff = D_eff_geo if D_eff_geo is not None else D_eff_coord
+    # Primary value: image-based when available, else the robust coordinate one.
+    D_eff = D_eff_img if D_eff_img is not None else D_eff_coord
+    print(f"  -> Reported effective diffusivity D_eff = {D_eff:.5e} m²/s "
+          f"({'image-based' if D_eff_img is not None else 'coordinate-based'}).")
 
-    # Tortuosity: tau = (D_bulk / D_eff) * porosity
+    # ---- Tortuosity ------------------------------------------------------
+    # NOTE — this is the NETWORK diffusive tortuosity FACTOR, defined through
+    # the effective-medium relation  D_eff = (porosity / tau) * D_bulk, i.e.
+    #     tau = porosity * D_bulk / D_eff .
+    # It measures how much the pore network lengthens/constricts diffusion paths
+    # relative to open bulk, on the *extracted pore network*. It is a DIFFERENT
+    # quantity, computed by a DIFFERENT method, from the voxel tortuosity of
+    # Simulations3D_porespy.TORTUOSITY (which solves finite-difference Laplace
+    # diffusion on the voxel image directly via ps.simulations.tortuosity_fd).
+    # The two normally disagree — the network idealises the geometry, the voxel
+    # method keeps every voxel — and comparing them is a useful sanity check,
+    # not a contradiction. Because tau is inversely proportional to D_eff, it
+    # inherits the A/L ambiguity above, so it is reported for the image-based
+    # (physical) normalisation and, for transparency, for the geometric one.
     porosity = float(im.sum()) / im.size
-    tort = D_bulk * porosity / D_eff
-    print(f"Tortuosity: {tort:.5f}")
+    tort = D_bulk * porosity / D_eff       # from the reported (image-based) D_eff
+    print(f"Network diffusive tortuosity factor tau = {tort:.5f}  "
+          f"(porosity*D_bulk/D_eff, image-based normalisation; "
+          f"distinct from the voxel-based TORTUOSITY / tortuosity_fd metric)")
+    if D_eff_geo is not None:
+        print(f"    (for comparison, geometric-normalisation tau = "
+              f"{D_bulk * porosity / D_eff_geo:.5f})")
 
     # Save to VTK for ParaView (skipped when the caller exports the whole project once).
     if save_vtk:
@@ -393,13 +471,18 @@ def simulate_advection_diffusion(network=None, chosen_phase='water', axis="x", i
           f"(negative = flux exiting domain, magnitude = {J_ad:.5e} m³/s)")
 
     # Peclet number: Pe = v * L / D  (dimensionless)
+    # Use the true image length when known (consistent with the image-based
+    # normalisation of K / D_eff above); fall back to the pore-centroid gap,
+    # then to OpenPNM's geometric length, if the image size is unavailable.
     D_bulk = phase["pore.diffusivity"].mean()
-    try:
-        L = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
-    except Exception:
-        _ax_ad = {"x": 0, "y": 1, "z": 2}[axis]
+    _A_img, L = image_domain_dimensions(coord_idx)
+    if L is None:
+        _ax_ad = coord_idx
         _c_ad = pn["pore.coords"]
-        L = abs(_c_ad[outlet_pores, _ax_ad].mean() - _c_ad[inlet_pores, _ax_ad].mean())
+        try:
+            L = abs(_c_ad[outlet_pores, _ax_ad].mean() - _c_ad[inlet_pores, _ax_ad].mean())
+        except Exception:
+            L = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
     v_mean = phase["throat.velocity"].mean() if "throat.velocity" in phase.keys() else 1e-5
     Pe = v_mean * L / D_bulk
     print(f"Mean Peclet number: {Pe:.5f}  (dimensionless — Pe > 1 means advection dominates)")
