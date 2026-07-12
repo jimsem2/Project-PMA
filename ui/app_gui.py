@@ -500,8 +500,11 @@ _FUNC_SAVE_FILE = {
     gen.PSEUDO_ELECTROSTATIC_PACKING: "Pseudo_Electrostatic_Packing.tif",
     gen.PSEUDO_GRAVITY_PACKING: "Pseudo_Gravity_Packing.tif",
     gen.VORONOI_EDGES: "Voronoi_Edges.tif",
+    met.CHORD_COUNTS: "chord_counts.xlsx",
     met.CHORD_LENGTH_DISTRIBUTION: "chord_length_distribution.xlsx",
     met.LINEAL_PATH_DISTRIBUTION: "lineal_path_distribution.xlsx",
+    met.POROSITY_PROFILE: "porosity_profile.xlsx",
+    met.SATN_PROFILE: "saturation_profile.xlsx",
     met.PC_MAP_TO_PC_CURVE: "pc_map_to_pc_curve.xlsx",
     met.PORE_SIZE_DISTRIBUTION: "pore_size_distribution.xlsx",
     met.RADIAL_DENSITY_DISTRIBUTION: "radial_density_distribution.xlsx",
@@ -914,7 +917,8 @@ METRIC_SPECS = [
         F("trim_edges", "bool", True, tooltip="Remove chords touching domain boundary"),
         F("apply_chords3D", "bool", True, tooltip="Use 3D chords; if False, uses 1D chords along axis"),
         F("axis", "choice_int", "0", AXIS3, tooltip="Chord axis when apply_chords3D is False"),
-        F("bins", "int", "25", tooltip=_TT_BINS)]),
+        F("bins", "int", "25", tooltip=_TT_BINS),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("CHORD_LENGTH_DISTRIBUTION", met.CHORD_LENGTH_DISTRIBUTION, [
         F("bins", "int", "25", tooltip=_TT_BINS),
         F("log", "bool", False, tooltip=_TT_LOG),
@@ -960,7 +964,8 @@ METRIC_SPECS = [
         F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("POROSITY", met.POROSITY, []),
     ("POROSITY_PROFILE", met.POROSITY_PROFILE, [
-        F("voxel_size", "float", "1", tooltip="Physical length of each voxel (µm)")]),
+        F("voxel_size", "float", "1", tooltip="Physical length of each voxel (µm)"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("RADIAL_DENSITY_DISTRIBUTION", met.RADIAL_DENSITY_DISTRIBUTION, [
         F("bins", "int", "25", tooltip=_TT_BINS),
         F("log", "bool", False, tooltip=_TT_LOG),
@@ -980,7 +985,12 @@ METRIC_SPECS = [
     ("REGIONPROPS_3D", met.REGIONPROPS_3D, [
         F("sphericity", "bool", False, tooltip="Compute and output per-region sphericity"),
         F("solidity", "bool", False, tooltip="Compute and output per-region solidity"),
-        F("num_pixels", "bool", False, tooltip="Include voxel count per region")]),
+        F("num_pixels", "bool", False, tooltip="Include voxel count per region"),
+        F("min_size", "int", "4",
+          tooltip="Drop regions smaller than this many voxels before building "
+                  "the table. Below 4 voxels a region has no valid 3D convex "
+                  "hull, which crashes feret_diameter_max. Such specks are "
+                  "usually segmentation noise")]),
     ("REV_POROSITY", met.REV_POROSITY, [
         F("n", "int", "1000", tooltip="Number of random sampling boxes")]),
     ("SATN_PROFILE", met.SATN_PROFILE, [
@@ -998,7 +1008,8 @@ METRIC_SPECS = [
           tooltip="Highest saturation threshold to profile; values above "
                   "the image's maximum saturation are skipped"),
         F("s_step", "float", "0.2",
-          tooltip="Spacing between saturation thresholds (one curve each)")]),
+          tooltip="Spacing between saturation thresholds (one curve each)"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
 ]
 
 _TT_RHO_NWP = "Non-wetting phase density (kg/m³)"

@@ -28,7 +28,21 @@ from time estimates; OpenPNM single-combined-VTK export.)*
 - *`SATN_PROFILE` gained `s_min` / `s_max` / `s_step` fields (defaults 0.1 / 0.9 /
   0.2 — the original hardcoded series). The function now also skips thresholds
   above the image's maximum reached saturation instead of raising
-  "The maximum saturation in the image is less than the given threshold".)*
+  "The maximum saturation in the image is less than the given threshold".*
+- *`FIND_H` now passes `axis=axis_of_intrusion` to `ps.metrics.satn_profile`
+  (previously it always profiled along axis 0, so results for intrusion axis 1
+  or 2 were meaningless — the profile was sliced across the invasion front).*
+- *`REGIONPROPS_3D` gained a `min_size` field (default 4). Regions below 4
+  voxels have no valid 3D convex hull, so skimage's `feret_diameter_max` failed
+  and aborted the whole table; they are now dropped before the table is built.*
+- *Three more metrics gained a `save_excel` field, exactly like the existing
+  exportable metrics: `CHORD_COUNTS` (→ `chord_counts.xlsx`, sheets `histogram`
+  + `raw_chords`), `POROSITY_PROFILE` (→ `porosity_profile.xlsx`, one sheet per
+  axis with voxel / physical / fractional position + porosity) and
+  `SATN_PROFILE` (→ `saturation_profile.xlsx`, a `position` column plus one
+  saturation column per threshold). Each new filename was added to
+  `_FUNC_SAVE_FILE`; because these funcs are **not** in `_ALWAYS_SAVES`,
+  `get_save_file()` only asks for a save location when the box is ticked.)*
 
 > **Line-number caveat:** the `CROP_VOLUME` and combined-export changes added a
 > handful of lines, so some `Lxxx` references below have drifted by a few lines.

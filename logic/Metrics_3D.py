@@ -32,12 +32,13 @@ def BOND_NUMBER(im, g=9.81, sigma=0.01, delta_rho=1000, voxel_size=1, source='lt
     return bn
 
 
-def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25): # returns cc
+def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25, save_excel=False): # returns cc  XLSX
     # Applies chords and counts their lengths. Works both with apply_chords and apply_chords_3D
     # spacing: space between chords, trim_edges: to remove edges that touch borders
     # apply_chords3D: if True applies apply_chords_3D, if False applies apply_chords
     # axis: the axis along which chords are drawn, only used when apply_chords3D is False, options: 0 for x axis, 1 for y axis, 2 for z axis
     # bins: number of classes for the histogram, 25 (default)
+    # save_excel: if True, exports the chord-length histogram and the raw chord lengths to Excel, default False
 
     if apply_chords3D:
         chords = ps.filters.apply_chords_3D(im=im, spacing=spacing, trim_edges=trim_edges)
@@ -61,6 +62,19 @@ def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bi
         ax.set_ylabel('Frequency')
 
     plt.show(block=False)
+
+    if save_excel:
+        cc_arr = np.asarray(cc)
+        counts, edges = np.histogram(cc_arr, bins=bins)
+        centers = (edges[:-1] + edges[1:]) / 2
+        with pd.ExcelWriter('chord_counts.xlsx') as writer:
+            pd.DataFrame({'bin_left': edges[:-1], 'bin_right': edges[1:],
+                          'bin_center': centers, 'count': counts}
+                         ).to_excel(writer, sheet_name='histogram', index=False)
+            pd.DataFrame({'chord_length': cc_arr}
+                         ).to_excel(writer, sheet_name='raw_chords', index=False)
+        print("Data saved to chord_counts.xlsx")
+
     return cc
 
 
@@ -119,7 +133,7 @@ def FIND_H(im, srange=[0.01, 0.95], axis_of_intrusion=0, voxel_size=1, g=0, s=0.
         inlets[:, :, 0] = True
     pc = ps.filters.capillary_transform(im=im, voxel_size=voxel_size, g=g)
     inv = ps.simulations.drainage(im=im, inlets=inlets, pc=pc)
-    s_prof = ps.metrics.satn_profile(satn=inv.im_snwp, s=s)
+    s_prof = ps.metrics.satn_profile(satn=inv.im_snwp, s=s, axis=axis_of_intrusion)
 
     fig, ax = plt.subplots(1, figsize=[6, 6])
     fig.canvas.manager.set_window_title("FIND H")
@@ -309,9 +323,10 @@ def POROSITY(im):   # returns porosity
     return porosity
 
 
-def POROSITY_PROFILE(im, voxel_size=1):   # returns prfx, prfy, prfz
+def POROSITY_PROFILE(im, voxel_size=1, save_excel=False):   # returns prfx, prfy, prfz  XLSX
     # im: binary image from Generators_3D
     # voxel_size: microns/voxel, default 1
+    # save_excel: if True, exports the three axial porosity profiles to Excel (one sheet per axis), default False
 
     prfx = ps.metrics.porosity_profile(im=im, axis=0)
     prfy = ps.metrics.porosity_profile(im=im, axis=1)
@@ -340,6 +355,20 @@ def POROSITY_PROFILE(im, voxel_size=1):   # returns prfx, prfy, prfz
     ax.legend()
 
     plt.show(block=False)
+
+    if save_excel:
+        def _frac(pos):
+            m = pos.max()
+            return pos / m if m else pos
+        with pd.ExcelWriter('porosity_profile.xlsx') as writer:
+            for name, prf in (('x_axis', prfx), ('y_axis', prfy), ('z_axis', prfz)):
+                pd.DataFrame({'position_voxels': prf.position,
+                              'position_physical': prf.position * voxel_size,
+                              'position_fractional': _frac(prf.position),
+                              'porosity': prf.porosity}
+                             ).to_excel(writer, sheet_name=name, index=False)
+        print("Data saved to porosity_profile.xlsx")
+
     return prfx, prfy, prfz
 
 
@@ -465,14 +494,30 @@ def REGION_VOLUMES(im, method='voxel', slice=0, save_excel=False):    # returns 
     return r_volumes, regions_vol
 
 
-def REGIONPROPS_3D(im, sphericity=False, solidity=False, num_pixels=False):   # returns props   XLSX
+def REGIONPROPS_3D(im, sphericity=False, solidity=False, num_pixels=False, min_size=4):   # returns props   XLSX
     # im: binary image from Generators_3D
     # sphericity: if True, saves an image of the sphericity of each region, default False
     # solidity: if True, saves an image of the solidity of each region, default False
     # num_pixels: if True, saves an image of the number of pixels in each region, default False
+    # min_size: regions with fewer voxels than this are dropped before the property
+    #   table is built, default 4. Below 4 voxels a region cannot form a genuine 3D
+    #   convex hull (qhull needs >= 4 non-coplanar points), so skimage's
+    #   feret_diameter_max returns an empty hull image and marching_cubes then raises
+    #   "Surface level must be within volume data range" — this crashes the entire
+    #   export, since props_to_DataFrame computes every property for every region in
+    #   one pass. Such 1-3 voxel specks are typically segmentation noise / dangling
+    #   fragments anyway and have no meaningful pore-body geometry.
 
     regions = spim.label(im)[0]     # to label the image for regionprops, snow partitioning is not used because it can assign the same label to different regions if they are not connected in the image, while spim.label will assign different labels to all disconnected regions in the image
     props = ps.metrics.regionprops_3D(regions)
+
+    n_before = len(props)
+    props = [p for p in props if p.num_pixels >= min_size]
+    n_dropped = n_before - len(props)
+    if n_dropped:
+        print(f"Dropped {n_dropped} of {n_before} region(s) smaller than "
+              f"min_size={min_size} voxels (degenerate for 3D convex-hull metrics "
+              f"such as feret_diameter_max).")
 
     df = ps.metrics.props_to_DataFrame(props)
 
@@ -522,7 +567,7 @@ def REV_POROSITY(im, n=1000):  # returns rev_porosity
 
 
 def SATN_PROFILE(im, span=2, mode='tile', intr_axis=0, sigma=0.01, theta=180, g=0,
-                 s_min=0.1, s_max=0.9, s_step=0.2):  # returns sp_list
+                 s_min=0.1, s_max=0.9, s_step=0.2, save_excel=False):  # returns sp_list  XLSX
     # im: binary image from Generators_3D
     # span: width of slice over which the saturation is computed, default 2 voxels
     # mode: How averaging window moves, options: by sliding ('slide') or by tiling ('tile')
@@ -533,6 +578,7 @@ def SATN_PROFILE(im, span=2, mode='tile', intr_axis=0, sigma=0.01, theta=180, g=
     # s_min / s_max / s_step: saturation thresholds to profile — one curve is
     #   drawn per value of np.arange(s_min, s_max + s_step/2, s_step).
     #   Defaults reproduce the original 0.1, 0.3, 0.5, 0.7, 0.9 series.
+    # save_excel: if True, exports the saturation profiles (one column per threshold) to Excel, default False
 
     inlets = np.zeros_like(im)
     if intr_axis == 0:
@@ -573,5 +619,15 @@ def SATN_PROFILE(im, span=2, mode='tile', intr_axis=0, sigma=0.01, theta=180, g=
     ax.legend()
 
     plt.show(block=False)
+
+    if save_excel:
+        # All thresholds share the same slab positions (same span/mode/axis),
+        # so one 'position' column plus one saturation column per threshold.
+        data = {'position': sp_list[0].position}
+        for s_value, sp in zip(usable, sp_list):
+            data[f's={s_value:.2f}'] = sp.saturation
+        pd.DataFrame(data).to_excel('saturation_profile.xlsx', index=False)
+        print("Data saved to saturation_profile.xlsx")
+
     return sp_list
 

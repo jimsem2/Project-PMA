@@ -105,6 +105,21 @@ operation with its `F(...)` field list.
 - `ResultBox._on_scroll` consumes the wheel only while the box itself can
   still scroll in that direction; otherwise the page scrolls.
 
+### Metric Excel export (`save_excel`) and `SPEC["SAVE_FILE"]`
+
+A metric writes an Excel file only if its card exposes a ticked `save_excel`
+field. `get_save_file(sec)` returns a filename either when the function is in
+`SPEC["ALWAYS_SAVES"]` (generators, PoreSpy/OpenPNM sims, `REGIONPROPS_3D`) or
+when its `save_excel` box is checked; the filename itself comes from
+`SPEC["SAVE_FILE"]`. To make a new metric exportable you therefore add both a
+`F("save_excel", "bool", False, tooltip=_TT_XL)` field **and** a
+`func: "name.xlsx"` entry in `SPEC["SAVE_FILE"]`. As of July 2026 the
+exportable metrics include `CHORD_COUNTS` (`chord_counts.xlsx`),
+`POROSITY_PROFILE` (`porosity_profile.xlsx`) and `SATN_PROFILE`
+(`saturation_profile.xlsx`) alongside the earlier distribution metrics.
+`REGIONPROPS_3D` also gained a `min_size` field (default 4) that drops tiny,
+convex-hull-degenerate regions before the property table is built.
+
 ## Slice viewer (Home)
 
 `SliceViewer` shows orthogonal slices of the **working image** by default,
