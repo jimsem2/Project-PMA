@@ -1,5 +1,5 @@
 """
-Fable UI — Porous Media Studio
+Porous Media Analysis UI
 ==============================
 
 A modern single-window app that drives the thesis analysis pipeline built on
@@ -31,7 +31,7 @@ The philosophy of the original GUI is preserved:
   filenames land in the chosen folder, then files are renamed as requested.
 
 Run with the same Python environment as the project:
-    python Fable_UI.py
+    python PorousMediaAnalysis_UI.py
 (Optional: pydicom for DICOM import.)
 """
 
@@ -1306,7 +1306,7 @@ def get_save_file(sec):
 # ===========================================================================
 #  The application
 # ===========================================================================
-class FableApp:
+class PMA_App:
     NAV = [
         ("home",    "⌂  Home"),
         ("generate","◆  Generate"),
@@ -3352,7 +3352,7 @@ def main():
 
     os.chdir(OUTPUT_DIR_DEFAULT)
     splash.destroy()
-    FableApp(root)
+    PMA_App(root)
     root.mainloop()
 
 
