@@ -10,6 +10,9 @@ from time estimates; OpenPNM single-combined-VTK export.)*
 
 *(Updated July 2026 — project restructure and UX fixes:*
 - *The analysis modules moved into the `logic/` package and this file into `ui/`.
+- *The coordination-number metric now renders a histogram instead of dumping a
+  long frequency list into the result pane, and the modern Fable UI keeps
+  `TWO_POINT_CORRELATION` at the end of the Metrics catalog.*
   A small bootstrap right before the `import logic.*` block inserts the project
   root (the parent of `ui/`) into `sys.path`, so the script runs from the IDE or
   the command line without any environment setup.*

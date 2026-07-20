@@ -187,6 +187,25 @@ def APPLY_CHORDS(im, spacing=1, axis=1, trim_edges=False, label=True, slice=0, s
         plt.show(block=False)
     return ac
 
+def APPLY_CHORDS_SOLID_PHASE(im, spacing=1, axis=1, trim_edges=False, label=True, slice=0, show_slice=True):  # returns ac
+    # spacing: space between chords
+    # axis: the axis along which chords are drawn
+    # trim_edges: when True, removes edges that touch borders
+    # label: when True, for chords in same voxel to have same colour
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice: if True, displays the slice plot
+
+    im = ~im  # Invert the image to apply chords on the solid phase
+    ac = ps.filters.apply_chords(im=im, spacing=spacing, axis=axis, trim_edges=trim_edges, label=label)
+    if show_slice:
+        # ps.visualization.imshow() creates its own figure, so we don't pre-create one.
+        ps.visualization.imshow((ac), axis=slice, ind=int(im.shape[slice]/2))
+        plt.gcf().canvas.manager.set_window_title("APPLY CHORDS")
+        plt.title("APPLY CHORDS")
+        plt.axis(False)
+        plt.show(block=False)
+    return ac
+
 
 def APPLY_CHORDS_3D(im, spacing=2, trim_edges=True, slice=0, show_slice=True):    # retuns ac3D
     # spacing: space between chords
@@ -194,6 +213,28 @@ def APPLY_CHORDS_3D(im, spacing=2, trim_edges=True, slice=0, show_slice=True):  
     # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
     # show_slice: if True, displays the slice plot
 
+    ac3D = ps.filters.apply_chords_3D(im=im, spacing=spacing, trim_edges=trim_edges)
+    ax_chords = 2                                              # which axis chords to show. 1 for x, 2 for y, 3 for z
+    if show_slice:
+        fig, ax = plt.subplots(1, 2, figsize=[12, 6])
+        fig.canvas.manager.set_window_title("APPLY CHORDS 3D")
+        ax[0].imshow((ac3D + ~im*4)[:, :, int(im.shape[slice]/2)])
+        ax[0].set_title("APPLY CHORDS 3D")
+        ax[0].axis(False)
+        ax[1].imshow(ac3D[:, :, int(im.shape[slice]/2)] == ax_chords)
+        ax[1].set_title("APPLY CHORDS 3D - Selected Axis")
+        ax[1].axis(False)
+        plt.show(block=False)
+    return ac3D
+
+
+def APPLY_CHORDS_3D_SOLID_PHASE(im, spacing=2, trim_edges=True, slice=0, show_slice=True):    # retuns ac3D
+    # spacing: space between chords
+    # trim_edges: when True, removes edges that touch borders
+    # slice: according to which axis to show the plane of the image, 0 for x, 1 for y, 2 for z
+    # show_slice: if True, displays the slice plot
+
+    im = ~im  # Invert the image to apply chords on the solid phase
     ac3D = ps.filters.apply_chords_3D(im=im, spacing=spacing, trim_edges=trim_edges)
     ax_chords = 2                                              # which axis chords to show. 1 for x, 2 for y, 3 for z
     if show_slice:

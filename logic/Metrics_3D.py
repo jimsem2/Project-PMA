@@ -4,6 +4,7 @@ import pandas as pd
 import porespy as ps
 import scipy.ndimage as spim
 import imageio
+import openpnm as op
 from porespy.filters import fftmorphology
 from skimage.morphology import ball
 from edt import edt
@@ -78,6 +79,53 @@ def CHORD_COUNTS(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bi
     return cc
 
 
+def CHORD_COUNTS_SOLID_PHASE(im, spacing=1, trim_edges=True, apply_chords3D=True, axis=0, bins=25, save_excel=False): # returns cc_sp  XLSX
+    # Applies chords and counts their lengths. Works both with apply_chords and apply_chords_3D
+    # spacing: space between chords, trim_edges: to remove edges that touch borders
+    # apply_chords3D: if True applies apply_chords_3D, if False applies apply_chords
+    # axis: the axis along which chords are drawn, only used when apply_chords3D is False, options: 0 for x axis, 1 for y axis, 2 for z axis
+    # bins: number of classes for the histogram, 25 (default)
+    # save_excel: if True, exports the chord-length histogram and the raw chord lengths to Excel, default False
+
+    im = ~im  # Invert the image to apply chords on the solid phase
+    if apply_chords3D:
+        chords = ps.filters.apply_chords_3D(im=im, spacing=spacing, trim_edges=trim_edges)
+        cc_sp = ps.metrics.chord_counts(im=chords)
+
+        fig, ax = plt.subplots(1, figsize=[6, 6])
+        fig.canvas.manager.set_window_title("CHORD COUNTS")
+        ax.hist(cc_sp, bins=bins)
+        ax.set_title("CHORD COUNTS")
+        ax.set_xlabel('Chord Length')
+        ax.set_ylabel('Frequency')
+    else:
+        chords = ps.filters.apply_chords(im=im, spacing=spacing, axis=axis, trim_edges=trim_edges, label=True)
+        cc_sp = ps.metrics.chord_counts(im=chords)
+
+        fig, ax = plt.subplots(1, figsize=[6, 6])
+        fig.canvas.manager.set_window_title("CHORD COUNTS")
+        ax.hist(cc_sp, bins=bins)
+        ax.set_title("CHORD COUNTS")
+        ax.set_xlabel('Chord Length Along Selected Axis')
+        ax.set_ylabel('Frequency')
+
+    plt.show(block=False)
+
+    if save_excel:
+        cc_arr = np.asarray(cc_sp)
+        counts, edges = np.histogram(cc_arr, bins=bins)
+        centers = (edges[:-1] + edges[1:]) / 2
+        with pd.ExcelWriter('chord_counts.xlsx') as writer:
+            pd.DataFrame({'bin_left': edges[:-1], 'bin_right': edges[1:],
+                          'bin_center': centers, 'count': counts}
+                         ).to_excel(writer, sheet_name='histogram', index=False)
+            pd.DataFrame({'chord_length': cc_arr}
+                         ).to_excel(writer, sheet_name='raw_chords', index=False)
+        print("Data saved to chord_counts.xlsx")
+
+    return cc_sp
+
+
 def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, normalization='number', apply_chords3D=True, axis=0, save_excel=False):   # returns cld_data  XLSX
     # im: binary image from Generators_3D
     # bins: number of classes for the histogram, 25 (default)
@@ -114,6 +162,94 @@ def CHORD_LENGTH_DISTRIBUTION(im, bins=25, log=False, voxel_size=1, normalizatio
         print("Plot saved to chord_length_distribution.xlsx")
 
     return cld_data
+
+
+def CHORD_LENGTH_DISTRIBUTION_SOLID_PHASE(im, bins=25, log=False, voxel_size=1, normalization='number', apply_chords3D=True, axis=0, save_excel=False):   # returns cld_sp_data  XLSX
+    # im: binary image from Generators_3D
+    # bins: number of classes for the histogram, 25 (default)
+    # log: logarithmic scale, if True then 'data.L' must be 'data.LogL' in the diagrams
+    # voxel_size: length in meters of voxel edges, used for scaling, 1 (default)
+    # normalization: how to normalize bin heights, options: 'count' or 'number' (default), 'length'
+    # axis: the axis along which chords are drawn, only used when apply_chords3D is False, options: 0 for x axis, 1 for y axis, 2 for z axis
+
+    im = ~im  # Invert the image to apply chords on the solid phase
+    if apply_chords3D:
+        im_chords = ps.filters.apply_chords_3D(im=im)
+    else:
+        im_chords = ps.filters.apply_chords(im=im, axis=axis)
+    cld_sp_data = ps.metrics.chord_length_distribution(im=im_chords, bins=bins, log=log, voxel_size=voxel_size, normalization=normalization)
+
+    fig, ax = plt.subplots(1, 3, figsize=[12, 4])
+    fig.canvas.manager.set_window_title("CHORD LENGTH DISTRIBUTION")
+    ax[0].plot(cld_sp_data.L, cld_sp_data.pdf)
+    ax[0].set_title("PROBABILITY DENSITY FUNCTION")
+    ax[0].set_xlabel("Chord Length")
+    ax[0].set_ylabel("Probability Density")
+    ax[1].plot(cld_sp_data.L, cld_sp_data.cdf)
+    ax[1].set_title("CUMULATIVE DENSITY FUNCTION")
+    ax[1].set_xlabel("Chord Length")
+    ax[1].set_ylabel("Cumulative Density")
+    ax[2].bar(cld_sp_data.L, cld_sp_data.cdf, cld_sp_data.bin_widths, edgecolor='k')
+    ax[2].set_title('BAR PLOT')
+    ax[2].set_xlabel("Chord Length")
+    ax[2].set_ylabel("Frequency")
+
+    plt.show(block=False)
+
+    if save_excel:
+        pd.DataFrame({'L': cld_sp_data.L, 'pdf': cld_sp_data.pdf, 'cdf': cld_sp_data.cdf}).to_excel('chord_length_distribution.xlsx', index=False)
+        print("Plot saved to chord_length_distribution.xlsx")
+
+    return cld_sp_data
+
+
+def COORDINATION_NUMBER(im, save_excel=False, voxel_size=1):   # returns cn
+    # im: binary image from Generators_3D
+    # save_excel: if True, exports the coordination number data to Excel, default False
+    # voxel_size: physical size of each voxel; passed to snow2 to build the OpenPNM network
+
+    im = np.asarray(im, dtype=bool)
+    im_snow2 = ps.networks.snow2(im, voxel_size=voxel_size)
+    network = op.io.network_from_porespy(im_snow2.network)
+
+    if 'throat.conns' not in network:
+        raise ValueError("The OpenPNM network does not contain throat connections.")
+
+    conns = network['throat.conns']
+    coordination_numbers = np.zeros(network.Np, dtype=int)
+    for p1, p2 in conns:
+        coordination_numbers[p1] += 1
+        coordination_numbers[p2] += 1
+
+    unique_coords, counts = np.unique(coordination_numbers, return_counts=True)
+    mean_coordination = coordination_numbers.mean()
+
+    fig, ax = plt.subplots(1, figsize=[6, 6])
+    fig.canvas.manager.set_window_title("COORDINATION NUMBER")
+    if unique_coords.size > 0:
+        min_coord = int(unique_coords.min())
+        max_coord = int(unique_coords.max())
+        bins = np.arange(min_coord - 0.5, max_coord + 1.5, 1.0)
+    else:
+        bins = 1
+    ax.hist(coordination_numbers, bins=bins, edgecolor='black')
+    ax.set_title("COORDINATION NUMBER DISTRIBUTION")
+    ax.set_xlabel("Coordination Number")
+    ax.set_ylabel("Frequency")
+    ax.text(0.98, 0.95, f"Mean = {mean_coordination:.2f}", transform=ax.transAxes,
+            ha="right", va="top", fontsize=10)
+    plt.show(block=False)
+
+    print(f"Coordination number histogram displayed. Mean coordination number: {mean_coordination:.2f}")
+
+    if save_excel:
+        freq_df = pd.DataFrame({'coordination_number': unique_coords, 'frequency': counts})
+        with pd.ExcelWriter('coordination_number.xlsx') as writer:
+            freq_df.to_excel(writer, sheet_name='frequency', index=False)
+            pd.DataFrame({'coordination_number': coordination_numbers}).to_excel(writer, sheet_name='pore_coordination_numbers', index=False)
+        print("Data saved to coordination_number.xlsx")
+
+    return coordination_numbers
 
 
 def FIND_H(im, srange=[0.01, 0.95], axis_of_intrusion=0, voxel_size=1, g=0, s=0.5): # returns h
@@ -631,3 +767,24 @@ def SATN_PROFILE(im, span=2, mode='tile', intr_axis=0, sigma=0.01, theta=180, g=
 
     return sp_list
 
+
+def TWO_POINT_CORRELATION(im, save_excel=False):  # returns tpc_data  XLSX
+    # im: binary image from Generators_3D
+    # save_excel: if True, exports the two-point correlation data to Excel, default False
+
+    tpc_data = ps.metrics.two_point_correlation(im=im)
+
+    fig, ax = plt.subplots(1, figsize=[6, 6])
+    fig.canvas.manager.set_window_title("TWO-POINT CORRELATION")
+    ax.plot(tpc_data.distance, tpc_data.probability, "r.")
+    ax.set_title("TWO-POINT CORRELATION")
+    ax.set_xlabel("Distance")
+    ax.set_ylabel("Correlation")
+
+    plt.show(block=False)
+
+    if save_excel:
+        pd.DataFrame({'distance': tpc_data.distance, 'probability': tpc_data.probability}).to_excel('two_point_correlation.xlsx', index=False)
+        print("Data saved to two_point_correlation.xlsx")
+
+    return tpc_data

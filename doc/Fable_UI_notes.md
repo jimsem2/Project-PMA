@@ -107,6 +107,12 @@ operation with its `F(...)` field list.
 
 ### Metric Excel export (`save_excel`) and `SPEC["SAVE_FILE"]`
 
+- The coordination-number metric now opens a histogram plot instead of printing
+  the full frequency table into the result box, while still exporting the same
+  Excel sheet when `save_excel` is checked.
+- `TWO_POINT_CORRELATION` is intentionally listed at the end of the Metrics
+  catalog so the UI order follows the ordering in `logic/Metrics_3D.py`.
+
 A metric writes an Excel file only if its card exposes a ticked `save_excel`
 field. `get_save_file(sec)` returns a filename either when the function is in
 `SPEC["ALWAYS_SAVES"]` (generators, PoreSpy/OpenPNM sims, `REGIONPROPS_3D`) or

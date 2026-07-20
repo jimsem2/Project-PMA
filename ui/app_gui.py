@@ -501,7 +501,11 @@ _FUNC_SAVE_FILE = {
     gen.PSEUDO_GRAVITY_PACKING: "Pseudo_Gravity_Packing.tif",
     gen.VORONOI_EDGES: "Voronoi_Edges.tif",
     met.CHORD_COUNTS: "chord_counts.xlsx",
+    met.CHORD_COUNTS_SOLID_PHASE: "chord_counts_solid_phase.xlsx",
     met.CHORD_LENGTH_DISTRIBUTION: "chord_length_distribution.xlsx",
+    met.CHORD_LENGTH_DISTRIBUTION_SOLID_PHASE: "chord_length_distribution_solid_phase.xlsx",
+    met.COORDINATION_NUMBER: "coordination_number.xlsx",
+    met.TWO_POINT_CORRELATION: "two_point_correlation.xlsx",
     met.LINEAL_PATH_DISTRIBUTION: "lineal_path_distribution.xlsx",
     met.POROSITY_PROFILE: "porosity_profile.xlsx",
     met.SATN_PROFILE: "saturation_profile.xlsx",
@@ -599,6 +603,8 @@ _TIME_ESTIMATES = {
     # Non-solid altering filters
     "APPLY_CHORDS":                 (0.3,  1.0),
     "APPLY_CHORDS_3D":              (1.0,  1.0),
+    "APPLY_CHORDS_SOLID_PHASE":     (0.3,  1.0),
+    "APPLY_CHORDS_3D_SOLID_PHASE":  (1.0,  1.0),
     "FIND_DISCONNECTED_VOXELS":     (0.5,  1.0),
     "LOCAL_THICKNESS":              (5.0,  1.1),
     "POROSIMETRY":                  (10.0, 1.1),
@@ -607,7 +613,11 @@ _TIME_ESTIMATES = {
     # Metrics
     "BOND_NUMBER":                  (5.0,  1.1),
     "CHORD_COUNTS":                 (1.0,  1.0),
+    "CHORD_COUNTS_SOLID_PHASE":     (1.0,  1.0),
     "CHORD_LENGTH_DISTRIBUTION":    (1.5,  1.0),
+    "CHORD_LENGTH_DISTRIBUTION_SOLID_PHASE": (1.5, 1.0),
+    "COORDINATION_NUMBER":          (1.0,  1.0),
+    "TWO_POINT_CORRELATION":        (1.0,  1.0),
     "FIND_H":                       (30.0, 1.2),
     "FIND_POROSITY_THRESHOLD":      (0.5,  1.0),
     "IS_PERCOLATING":               (0.5,  1.0),
@@ -867,6 +877,18 @@ FILTER_GROUPS = [
             F("trim_edges", "bool", True, tooltip="Remove chords that touch the domain boundary"),
             F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
             F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
+        ("APPLY_CHORDS_SOLID_PHASE", filt.APPLY_CHORDS_SOLID_PHASE, [
+            F("spacing", "int", "1", tooltip="Voxels between parallel chord lines"),
+            F("axis", "choice_int", "1", AXIS3, tooltip="Axis along which chords are drawn"),
+            F("trim_edges", "bool", False, tooltip="Remove chords that touch the domain boundary"),
+            F("label", "bool", True, tooltip="Assign a unique label to each chord"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
+        ("APPLY_CHORDS_3D_SOLID_PHASE", filt.APPLY_CHORDS_3D_SOLID_PHASE, [
+            F("spacing", "int", "2", tooltip="Voxels between parallel chord lines"),
+            F("trim_edges", "bool", True, tooltip="Remove chords that touch the domain boundary"),
+            F("slice", "choice_int", "0", AXIS3, tooltip=_TT_SLICE),
+            F("show_slice", "bool", True, tooltip=_TT_SHOW_SLICE)]),
         ("FIND_DISCONNECTED_VOXELS", filt.FIND_DISCONNECTED_VOXELS, [
             F("conn", "choice_str", "max", ["max", "min"], tooltip=_TT_CONN),
             F("show_3d", "bool", True, tooltip="Show 3D visualization of disconnected voxels")]),
@@ -919,6 +941,13 @@ METRIC_SPECS = [
         F("axis", "choice_int", "0", AXIS3, tooltip="Chord axis when apply_chords3D is False"),
         F("bins", "int", "25", tooltip=_TT_BINS),
         F("save_excel", "bool", False, tooltip=_TT_XL)]),
+    ("CHORD_COUNTS_SOLID_PHASE", met.CHORD_COUNTS_SOLID_PHASE, [
+        F("spacing", "int", "1", tooltip="Voxels between parallel chord lines"),
+        F("trim_edges", "bool", True, tooltip="Remove chords touching domain boundary"),
+        F("apply_chords3D", "bool", True, tooltip="Use 3D chords; if False, uses 1D chords along axis"),
+        F("axis", "choice_int", "0", AXIS3, tooltip="Chord axis when apply_chords3D is False"),
+        F("bins", "int", "25", tooltip=_TT_BINS),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("CHORD_LENGTH_DISTRIBUTION", met.CHORD_LENGTH_DISTRIBUTION, [
         F("bins", "int", "25", tooltip=_TT_BINS),
         F("log", "bool", False, tooltip=_TT_LOG),
@@ -927,6 +956,18 @@ METRIC_SPECS = [
           tooltip="Bin height normalization: count, number, or length"),
         F("apply_chords3D", "bool", True, tooltip="Use 3D chords; if False, uses 1D chords along axis"),
         F("axis", "choice_int", "0", AXIS3, tooltip="Chord axis when apply_chords3D is False"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
+    ("CHORD_LENGTH_DISTRIBUTION_SOLID_PHASE", met.CHORD_LENGTH_DISTRIBUTION_SOLID_PHASE, [
+        F("bins", "int", "25", tooltip=_TT_BINS),
+        F("log", "bool", False, tooltip=_TT_LOG),
+        F("voxel_size", "float", "1", tooltip=_TT_VS),
+        F("normalization", "choice_str", "number", ["count", "number", "length"],
+          tooltip="Bin height normalization: count, number, or length"),
+        F("apply_chords3D", "bool", True, tooltip="Use 3D chords; if False, uses 1D chords along axis"),
+        F("axis", "choice_int", "0", AXIS3, tooltip="Chord axis when apply_chords3D is False"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
+    ("COORDINATION_NUMBER", met.COORDINATION_NUMBER, [
+        F("voxel_size", "float", "1", tooltip="Physical length of each voxel (m) passed to snow2"),
         F("save_excel", "bool", False, tooltip=_TT_XL)]),
     ("FIND_H", met.FIND_H, [
         F("srange", "list_float", "0.01,0.95",
@@ -1009,6 +1050,8 @@ METRIC_SPECS = [
                   "the image's maximum saturation are skipped"),
         F("s_step", "float", "0.2",
           tooltip="Spacing between saturation thresholds (one curve each)"),
+        F("save_excel", "bool", False, tooltip=_TT_XL)]),
+    ("TWO_POINT_CORRELATION", met.TWO_POINT_CORRELATION, [
         F("save_excel", "bool", False, tooltip=_TT_XL)]),
 ]
 
