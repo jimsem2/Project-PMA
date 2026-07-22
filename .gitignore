@@ -11,4 +11,9 @@ __pycache__/
 *.vti
 *.tif
 *.vtp
+*.raw
 ui/UI_output/
+
+# Built executable (large) and PyInstaller build logs — regenerate, don't commit
+/PorousMediaAnalysis.exe
+build_log*.txt

@@ -42,7 +42,7 @@ saturation, capillary pressure) into a single `.vti` file for ParaView.
     mistaken belief that pyevtk wants `(nz, ny, nx)`. That transpose actually
     produced `(nz, nx, ny)`, which put app-x onto ParaView's **Y** axis — the
     cause of the "pseudo-gravity settles along the wrong axis in ParaView" bug.
-    The matching reader `read_vti` in `Fable_UI.py` was updated in lockstep
+    The matching reader `read_vti` in `PorousMediaAnalysis_UI.py` was updated in lockstep
     (it no longer applies an inverse transpose). Any `.vti` written *before*
     this fix opens transposed — regenerate it.
 

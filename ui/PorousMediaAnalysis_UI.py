@@ -35,10 +35,18 @@ Run with the same Python environment as the project:
 (Optional: pydicom for DICOM import.)
 """
 
+# Fix encoding for paths with non-ASCII characters
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 import os
 import io
 import re
-import sys
 import math
 import time
 import queue
@@ -137,12 +145,38 @@ def load_app_icon(size=None):
 gen = filt = met = psim = opnm = None
 
 
+def _import_logic_modules():
+    """Import the five logic.* modules and store them in the globals."""
+    global gen, filt, met, psim, opnm
+    import logic.Generators_3D as _gen
+    import logic.Filters_3D as _filt
+    import logic.Metrics_3D as _met
+    import logic.Simulations3D_porespy as _psim
+    import logic.Simulations3D_openPNM as _opnm
+    gen, filt, met, psim, opnm = _gen, _filt, _met, _psim, _opnm
+
+
 def load_project_modules():
     """Import the thesis modules (heavy: porespy/openpnm). Called after the
-    splash screen is painted so start-up does not look frozen."""
-    global gen, filt, met, psim, opnm
+    splash screen is painted so start-up does not look frozen.
+
+    Frozen (.exe): the `logic` package is compiled into the bundle, so a plain
+    ``import logic.*`` works — any failure here is a genuine error (e.g. a
+    missing dependency inside a logic module) and is re-raised as-is so the
+    real cause is visible, not hidden behind a generic message.
+
+    From source: the project root (which contains the `logic/` package) is put
+    on sys.path first, because running ``python ui/PorousMediaAnalysis_UI.py``
+    leaves only ui/ on the path.
+    """
+    if getattr(sys, "frozen", False):
+        _import_logic_modules()
+        return
+
+    # Running from source: make sure the folder containing logic/ is importable.
     for cand in MODULE_DIR_CANDIDATES:
-        if os.path.isfile(os.path.join(cand, "logic", "Generators_3D.py")):
+        if cand and os.path.isfile(
+                os.path.join(cand, "logic", "Generators_3D.py")):
             if cand not in sys.path:
                 sys.path.insert(0, cand)
             break
@@ -150,12 +184,8 @@ def load_project_modules():
         raise ImportError(
             "Could not find the project modules (logic/Generators_3D.py etc.).\n"
             "Looked in:\n" + "\n".join(MODULE_DIR_CANDIDATES))
-    import logic.Generators_3D as _gen
-    import logic.Filters_3D as _filt
-    import logic.Metrics_3D as _met
-    import logic.Simulations3D_porespy as _psim
-    import logic.Simulations3D_openPNM as _opnm
-    gen, filt, met, psim, opnm = _gen, _filt, _met, _psim, _opnm
+
+    _import_logic_modules()
 
 
 # ===========================================================================

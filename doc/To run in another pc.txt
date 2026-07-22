@@ -1,27 +1,66 @@
-Key notes:
+HOW TO RUN THIS PROJECT ON ANOTHER PC
+=====================================
 
+There are two ways to hand the project to another Windows PC.
+
+
+OPTION A — Just the executable (no Python needed)
+-------------------------------------------------
+Copy the single file:
+
+    dist\PorousMediaAnalysis.exe
+
+to the other PC and double-click it. It is fully self-contained (~166 MB);
+nothing else is required. On first launch it creates a "UI_output" folder next
+to the .exe for its results. First start-up takes ~30-60 s while the bundle
+unpacks and the scientific libraries load.
+
+
+OPTION B — The source code (so the user can read / edit it)
+-----------------------------------------------------------
 Python 3.12 is recommended (3.14+ has compatibility issues with porespy's
-dependencies). If the machine has Python 3.13+, create a Python 3.12 venv:
+dependencies). On the target PC, from the project root:
 
     py -3.12 -m venv .venv
     .venv\Scripts\activate
-    pip install -r doc\requirements.txt
+    python -m pip install --upgrade pip
+    python -m pip install -r requirements.txt
 
-Project layout (after the July 2026 restructure):
+Then run the app from the project root:
 
-    Project\
-      ui\      Fable_UI.py   <- modern single-window app ("Porous Media Analysis")
-               app_gui.py    <- original wizard-style GUI
-      logic\   Generators_3D.py, Filters_3D.py, Metrics_3D.py,
-               Simulations3D_porespy.py, Simulations3D_openPNM.py
-      assets\  Icon.png, icon.ico
-      doc\     these notes + requirements.txt
+    python ui\PorousMediaAnalysis_UI.py
 
-Run either UI from the project root (both bootstrap sys.path themselves, so
-the working directory does not matter):
+To rebuild the .exe yourself (PyInstaller is already in requirements.txt):
 
-    python ui\Fable_UI.py
-    python ui\app_gui.py
+    .venv\Scripts\python.exe -m PyInstaller PorousMediaAnalysis.spec --noconfirm
 
-Outputs default to ui\UI_output (created automatically). When a packaged
-.exe is used instead, the UI_output folder is created next to the .exe.
+
+What you MUST copy for Option B
+-------------------------------
+    ui\PorousMediaAnalysis_UI.py   the app
+    logic\                         Generators_3D.py, Filters_3D.py, Metrics_3D.py,
+                                   Simulations3D_porespy.py, Simulations3D_openPNM.py,
+                                   __init__.py   (needed for imports + exe build)
+    assets\                        Icon.png, icon.ico
+    requirements.txt               dependency list
+    PorousMediaAnalysis.spec       only if you want to rebuild the .exe
+    doc\                           these notes (optional but recommended)
+
+
+What you do NOT need to copy (regenerated per machine, or leftovers)
+-------------------------------------------------------------------
+    .venv\                 recreate on the target PC (see above); never copy
+    build\                 PyInstaller scratch output
+    dist\                  old build artifacts (keep only the .exe if using Option A)
+    __pycache__\           Python bytecode caches (any folder with this name)
+    RockSamples\           ~5 GB of sample rock images — only test data, optional
+    deprecated\            old scripts kept for reference, not used by the app
+    ui\app_gui.py          the original wizard-style GUI, superseded by the new UI
+    ui\UI_output\          previously generated results
+
+
+Run notes
+---------
+Outputs default to a "UI_output" folder (next to the .py when run from source,
+next to the .exe when packaged). It is created automatically. Optional pydicom
+is already in requirements.txt and enables DICOM import.

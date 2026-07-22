@@ -11,7 +11,7 @@ from time estimates; OpenPNM single-combined-VTK export.)*
 *(Updated July 2026 — project restructure and UX fixes:*
 - *The analysis modules moved into the `logic/` package and this file into `ui/`.
 - *The coordination-number metric now renders a histogram instead of dumping a
-  long frequency list into the result pane, and the modern Fable UI keeps
+  long frequency list into the result pane, and the modern Porous Media Analysis UI keeps
   `TWO_POINT_CORRELATION` at the end of the Metrics catalog.*
   A small bootstrap right before the `import logic.*` block inserts the project
   root (the parent of `ui/`) into `sys.path`, so the script runs from the IDE or
@@ -273,7 +273,7 @@ by both `DRAINAGE` and `IMBIBITION` since they share the same parameter set.
     binary `.tif` save (`_ALWAYS_SAVES` path) writes with `(2, 1, 0)`. These all
     used to be `(2, 0, 1)` / `(1, 2, 0)`, which silently swapped X↔Y versus
     ParaView (obvious on `pseudo_gravity_packing`). This mirrors the identical
-    fix in `Fable_UI.py` — see `doc/Fable_UI_notes.md` "Volume axis convention".
+    fix in `PorousMediaAnalysis_UI.py` — see `doc/PorousMediaAnalysis_UI_notes.md` "Volume axis convention".
   - When a DICOM source was loaded, a `messagebox.showinfo` shows the voxel
     spacing from the file header (in mm) and reminds the user to convert it
     to **metres** when entering `voxel_size` elsewhere in the GUI — this

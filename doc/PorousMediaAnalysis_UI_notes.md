@@ -1,4 +1,4 @@
-# Notes on `ui/Fable_UI.py` — "Porous Media Analysis"
+# Notes on `ui/PorousMediaAnalysis_UI.py` — "Porous Media Analysis"
 
 Companion explanation file — does not modify the source. The file is large
 (~2 800 lines), so sections are referenced **by name** rather than by line
@@ -157,17 +157,41 @@ plot opens, in order of preference:
 
 ## Packaging as an .exe (PyInstaller)
 
-- Include the assets: `--add-data "assets;assets" --icon assets/icon.ico`.
-- `OUTPUT_DIR_DEFAULT` automatically becomes `UI_output` next to the exe.
-- The `logic/` package must be importable — run PyInstaller from the project
-  root (e.g. `pyinstaller ui/Fable_UI.py --paths .`) so `logic` is bundled.
+The build is driven by `PorousMediaAnalysis.spec` at the project root. Build
+from the project root with the project's venv:
+
+    .venv\Scripts\python.exe -m PyInstaller PorousMediaAnalysis.spec --noconfirm
+
+Result: `dist\PorousMediaAnalysis.exe` — a single, self-contained onefile
+(~166 MB) that runs on another Windows PC with no Python installed. Copy just
+that one file.
+
+Two things in the spec are essential; without them the frozen exe fails at
+start-up with the "Start-up failed" dialog:
+
+- `collect_submodules('logic')` bundles the analysis package. `logic/` must
+  contain an `__init__.py` so it is a real (bundleable) package, otherwise
+  PyInstaller skips it and `import logic.Generators_3D` fails inside the exe.
+- `copy_metadata(...)` ships the `*.dist-info` metadata for imageio, porespy,
+  openpnm, scikit-image, numba, etc. Those packages call
+  `importlib.metadata.version(<self>)` at import time and raise
+  `PackageNotFoundError` if the metadata is missing.
+
+`OUTPUT_DIR_DEFAULT` automatically becomes a `UI_output` folder next to the
+exe (via `sys.executable` when frozen); assets are found through `sys._MEIPASS`.
+
+Debugging a frozen start-up failure: temporarily set `console=True` in the
+spec, rebuild, run the exe from a terminal, and read stderr — the windowed
+(`console=False`) build hides the traceback. `load_project_modules()` is
+frozen-aware: inside the exe it imports `logic.*` directly and re-raises the
+real error instead of masking it.
 
 ## Renaming the file
 
-Renaming `Fable_UI.py` is safe: nothing imports it (it is a standalone entry
-point) and `OUTPUT_DIR_DEFAULT`/asset lookup are relative to the file's own
-directory, so they move with it. Update only: (1) whatever
-shortcut/command/launch config starts it, (2) the PyInstaller build command
-and the exe name it produces, and (3) this notes file's title. Internal
-branding is already decoupled — the visible name comes from `APP_TITLE`, not
-the filename.
+Renaming `PorousMediaAnalysis_UI.py` is safe: nothing imports it (it is a
+standalone entry point) and `OUTPUT_DIR_DEFAULT`/asset lookup are relative to
+the file's own directory, so they move with it. Update only: (1) whatever
+shortcut/command/launch config starts it, (2) the `Analysis([...])` script
+path and `name=` in `PorousMediaAnalysis.spec`, and (3) this notes file's
+title. Internal branding is already decoupled — the visible name comes from
+`APP_TITLE`, not the filename.
