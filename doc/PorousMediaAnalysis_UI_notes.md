@@ -176,6 +176,15 @@ start-up with the "Start-up failed" dialog:
   openpnm, scikit-image, numba, etc. Those packages call
   `importlib.metadata.version(<self>)` at import time and raise
   `PackageNotFoundError` if the metadata is missing.
+- `collect_data_files('chemicals' / 'thermo' / 'fluids')` ships the physical-property
+  databases (~91 MB of `.tsv` / `.json`) that OpenPNM uses to build its fluid phases.
+  PyInstaller bundles Python modules but not package data, so without this the frozen
+  app raises, the moment a phase is created,
+  `FileNotFoundError: ...\chemicals\Identifiers\chemical identifiers pubchem small.tsv`
+  — which breaks *every* OpenPNM simulation (Stokes flow, Fickian diffusion,
+  advection–diffusion, drainage, invasion percolation) while the rest of the app keeps
+  working. This failure only appears in the packaged .exe: from source the files are
+  present in site-packages, so it cannot be reproduced by running the .py.
 
 `OUTPUT_DIR_DEFAULT` automatically becomes a `UI_output` folder next to the
 exe (via `sys.executable` when frozen); assets are found through `sys._MEIPASS`.

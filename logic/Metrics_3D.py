@@ -93,7 +93,7 @@ def CHORD_COUNTS_SOLID_PHASE(im, spacing=1, trim_edges=True, apply_chords3D=True
         cc_sp = ps.metrics.chord_counts(im=chords)
 
         fig, ax = plt.subplots(1, figsize=[6, 6])
-        fig.canvas.manager.set_window_title("CHORD COUNTS")
+        fig.canvas.manager.set_window_title("CHORD COUNTS - SOLID PHASE")
         ax.hist(cc_sp, bins=bins)
         ax.set_title("CHORD COUNTS")
         ax.set_xlabel('Chord Length')
@@ -103,7 +103,7 @@ def CHORD_COUNTS_SOLID_PHASE(im, spacing=1, trim_edges=True, apply_chords3D=True
         cc_sp = ps.metrics.chord_counts(im=chords)
 
         fig, ax = plt.subplots(1, figsize=[6, 6])
-        fig.canvas.manager.set_window_title("CHORD COUNTS")
+        fig.canvas.manager.set_window_title("CHORD COUNTS - SOLID PHASE")
         ax.hist(cc_sp, bins=bins)
         ax.set_title("CHORD COUNTS")
         ax.set_xlabel('Chord Length Along Selected Axis')
@@ -115,13 +115,13 @@ def CHORD_COUNTS_SOLID_PHASE(im, spacing=1, trim_edges=True, apply_chords3D=True
         cc_arr = np.asarray(cc_sp)
         counts, edges = np.histogram(cc_arr, bins=bins)
         centers = (edges[:-1] + edges[1:]) / 2
-        with pd.ExcelWriter('chord_counts.xlsx') as writer:
+        with pd.ExcelWriter('chord_counts_solid_phase.xlsx') as writer:
             pd.DataFrame({'bin_left': edges[:-1], 'bin_right': edges[1:],
                           'bin_center': centers, 'count': counts}
                          ).to_excel(writer, sheet_name='histogram', index=False)
             pd.DataFrame({'chord_length': cc_arr}
                          ).to_excel(writer, sheet_name='raw_chords', index=False)
-        print("Data saved to chord_counts.xlsx")
+        print("Data saved to chord_counts_solid_phase.xlsx")
 
     return cc_sp
 
@@ -180,7 +180,7 @@ def CHORD_LENGTH_DISTRIBUTION_SOLID_PHASE(im, bins=25, log=False, voxel_size=1, 
     cld_sp_data = ps.metrics.chord_length_distribution(im=im_chords, bins=bins, log=log, voxel_size=voxel_size, normalization=normalization)
 
     fig, ax = plt.subplots(1, 3, figsize=[12, 4])
-    fig.canvas.manager.set_window_title("CHORD LENGTH DISTRIBUTION")
+    fig.canvas.manager.set_window_title("CHORD LENGTH DISTRIBUTION - SOLID PHASE")
     ax[0].plot(cld_sp_data.L, cld_sp_data.pdf)
     ax[0].set_title("PROBABILITY DENSITY FUNCTION")
     ax[0].set_xlabel("Chord Length")
@@ -197,8 +197,8 @@ def CHORD_LENGTH_DISTRIBUTION_SOLID_PHASE(im, bins=25, log=False, voxel_size=1, 
     plt.show(block=False)
 
     if save_excel:
-        pd.DataFrame({'L': cld_sp_data.L, 'pdf': cld_sp_data.pdf, 'cdf': cld_sp_data.cdf}).to_excel('chord_length_distribution.xlsx', index=False)
-        print("Plot saved to chord_length_distribution.xlsx")
+        pd.DataFrame({'L': cld_sp_data.L, 'pdf': cld_sp_data.pdf, 'cdf': cld_sp_data.cdf}).to_excel('chord_length_distribution_solid_phase.xlsx', index=False)
+        print("Plot saved to chord_length_distribution_solid_phase.xlsx")
 
     return cld_sp_data
 
@@ -473,7 +473,9 @@ def POROSITY_PROFILE(im, voxel_size=1, save_excel=False):   # returns prfx, prfy
     ax.plot(prfx.position * voxel_size, prfx.porosity, 'b-', label='yz-plane', alpha=0.5)
     ax.plot(prfy.position * voxel_size, prfy.porosity, 'r-', label='xz-plane', alpha=0.5)
     ax.plot(prfz.position * voxel_size, prfz.porosity, 'g-', label='xy-plane', alpha=0.5)
-    ax.plot([0, 1], [ps.metrics.porosity(im=im), ps.metrics.porosity(im=im)], 'r--')
+    # the three profiles are drawn together, so the mean-porosity line must span
+    # the longest axis of the image (not just axis 0) to cover the whole plot
+    ax.plot([0*voxel_size, max(im.shape)*voxel_size], [ps.metrics.porosity(im=im), ps.metrics.porosity(im=im)], 'r--')
     ax.set_title("POROSITY PROFILE")
     ax.set_ylabel('Porosity Of Slice')
     ax.set_xlabel('Position Of Slice Along Given Axis')
