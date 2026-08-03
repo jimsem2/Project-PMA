@@ -41,6 +41,12 @@ edt
 # Optional packaging dependency (to rebuild the .exe):
 pyinstaller
 
+# Optional dependency for the standalone .dat -> .tif converter in tools\.
+# Only needed for drag-and-drop in tools\dat_converter_gui.py; without it the
+# converter still runs (using its "Add files..." buttons), and the main
+# application does not use it at all.
+tkinterdnd2
+
 # ---------------------------------------------------------------------------
 # Tested-with versions (Python 3.12.10 on Windows 11). The list above is left
 # unpinned so a fresh install picks compatible builds, but if you need an exact
@@ -51,5 +57,5 @@ pyinstaller
 #   scikit-image==0.26.0  scikit-learn==1.8.0   imageio==2.37.3
 #   edt==3.0.0            pyevtk==1.7.0         PyWavelets==1.9.0
 #   pydicom==3.0.2        pillow==12.2.0        openpyxl==3.1.5
-#   h5py==3.16.0          pyinstaller==6.21.0
+#   h5py==3.16.0          pyinstaller==6.21.0   tkinterdnd2==0.6.2
 # ---------------------------------------------------------------------------

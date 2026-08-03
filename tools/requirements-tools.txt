@@ -1,0 +1,29 @@
+# Dependencies for the standalone .dat -> .tif converter in this folder.
+#
+# Use this file when you copy ONLY the tools\ folder to another PC. It is a
+# tiny subset of the project's main requirements.txt — the converter does not
+# need porespy, openpnm, scipy, matplotlib or any of the heavy scientific
+# stack, so installing this takes seconds instead of minutes.
+#
+# Setup on a PC that already has Python 3.12:
+#     python -m pip install -r requirements-tools.txt
+#
+# Then double-click "DAT to TIF converter.bat", or run:
+#     python dat_converter_gui.py
+
+# Required — array handling and TIFF writing:
+numpy
+imageio
+tifffile          # imageio uses this plugin for 3-D .tif volumes
+
+# Optional — enables dragging files onto the window. Without it the converter
+# still works; use its "Add files..." / "Add folder..." buttons instead.
+tkinterdnd2
+
+# Note: tkinter itself is part of the standard library on Windows and is
+# installed automatically with Python from python.org — nothing to add here.
+
+# ---------------------------------------------------------------------------
+# Tested with (Python 3.12.10 on Windows 11):
+#   numpy==2.4.6   imageio==2.37.3   tifffile==2026.5.15   tkinterdnd2==0.6.2
+# ---------------------------------------------------------------------------

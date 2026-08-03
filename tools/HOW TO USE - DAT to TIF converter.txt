@@ -1,0 +1,153 @@
+DAT -> TIF CONVERTER — HOW TO USE
+=================================
+
+WHAT IT IS FOR
+--------------
+Some volumes (e.g. the files in RockSamples\Kikkis) are supplied as ASCII
+".dat" files: plain text containing nothing but the characters '0' and '1',
+one character per voxel. The Porous Media Analysis app cannot read that
+format directly, but it reads 3-D TIFF volumes.
+
+This tool converts .dat -> .tif so the app can open them.
+
+IMPORTANT: this tool is completely separate from the main application. Using
+it never changes the app's source code, so you never have to rebuild the .exe
+or update the copy on the other PC. You only copy the produced .tif files.
+
+
+THE FASTEST WAY (drag and drop)
+-------------------------------
+1. Double-click:              tools\DAT to TIF converter.bat
+2. Drag your .dat files (or a whole folder containing them) onto the window.
+3. Check "Pore / void character" (see below).
+4. Press Convert.
+
+You can also drag .dat files straight onto the .bat file icon in Explorer —
+the window opens with those files already queued.
+
+Each .tif is written next to its .dat file, unless you set an output folder.
+
+
+THE OPTIONS EXPLAINED
+---------------------
+Pore / void character      Which character in the .dat file means empty space.
+                           Default is 1.
+                           For the Kikkis files the "_1_" in the file name
+                           means "1 is the void", so 1 is correct for them.
+                           If you pick the wrong one the image comes out
+                           inverted (pore and solid swapped). You can fix that
+                           either by re-converting with the other setting, or
+                           by choosing "invert" when importing in the app.
+
+also write a .raw copy      Optional. Writes an extra headerless .raw file.
+                           Not needed normally — the .tif is easier to use
+                           because the app reads its shape automatically.
+                           With .raw you must type the shape and datatype by
+                           hand at import.
+
+Output folder               Leave empty to write each .tif next to its .dat.
+                           Otherwise all results go to the folder you choose.
+
+
+COMMAND-LINE VERSION (no window)
+--------------------------------
+Run from the project root:
+
+    python tools\dat_to_tif.py                          converts RockSamples\Kikkis
+    python tools\dat_to_tif.py "C:\some\folder"         every .dat in that folder
+    python tools\dat_to_tif.py file1.dat file2.dat      specific files
+    python tools\dat_to_tif.py <input> --pore-is 0      if 0 is the void
+    python tools\dat_to_tif.py <input> --raw            also write .raw copies
+
+You do NOT have to put your files in the Kikkis folder. That folder is only
+the default when you give no arguments at all.
+
+
+WHAT KIND OF FILES IT ACCEPTS
+-----------------------------
+- Text files containing only '0' and '1' (plus line breaks).
+- The volume must be a cube: n characters per line and n*n lines, which gives
+  an n x n x n volume. The size is detected automatically.
+- Line order is read as: line number = z*n + y, character position = x.
+
+If a file contains anything else (spaces, commas, decimal numbers, a header
+line), the converter stops and says so rather than producing a wrong volume.
+Such files need a different reader — ask for one and it can be added.
+
+
+USING THIS TOOL ON ANOTHER PC
+----------------------------
+You have two choices.
+
+Option 1 — convert here, copy the results (simplest)
+    Convert on this PC and copy only the produced .tif files to the other PC.
+    Nothing needs to be installed there; the .exe opens the .tif directly.
+
+Option 2 — copy the tool and run it there (needs Python)
+    1. Copy the whole "tools" folder to the other PC. It works on its own —
+       it does not need the rest of the project.
+    2. Make sure Python 3.12 is installed there (python.org; during setup tick
+       "Add python.exe to PATH").
+    3. Open a Command Prompt in the copied tools folder and install the few
+       packages the converter needs:
+
+           python -m pip install -r requirements-tools.txt
+
+       This is a small subset of the project's main requirements.txt — the
+       converter does NOT need porespy, openpnm, scipy or matplotlib, so this
+       takes seconds, not minutes.
+    4. Double-click "DAT to TIF converter.bat" as usual.
+
+The .bat finds Python automatically: it uses the project's .venv when the
+tools folder sits inside the full project, and otherwise falls back to the
+system Python on PATH. So the same file works in both places.
+
+Note: copying the tool does NOT affect PorousMediaAnalysis.exe in any way.
+The converter is a separate program; the .exe never has to be rebuilt.
+
+
+TROUBLESHOOTING
+---------------
+The window does not open when I double-click the .bat
+    The .bat hides the console, so start-up errors are invisible. Open a
+    Command Prompt in the tools folder and run it with a console:
+        python dat_converter_gui.py
+    (inside the full project you can also use
+     ..\.venv\Scripts\python.exe dat_converter_gui.py)
+    The error message will explain what is missing — usually a package that
+    still has to be installed, see "Using this tool on another PC" above.
+
+"No module named numpy" (or imageio / tifffile)
+    The required packages are not installed for the Python being used:
+        python -m pip install -r requirements-tools.txt
+
+Drag and drop does nothing
+    The drag-and-drop support needs the "tkinterdnd2" package:
+        python -m pip install tkinterdnd2
+    Without it the window still works — use "Add files..." / "Add folder...".
+
+"... is not a perfect cube"
+    The file is not an n x n x n volume, so the shape cannot be guessed.
+    A non-cubic volume needs the shape to be entered manually; this is not
+    supported yet.
+
+The image looks inverted in the app
+    The "Pore / void character" setting was the wrong way round. Either
+    re-convert with the other value, or pick "inverted" at import.
+
+Converted image looks like noise
+    The file is probably not a simple 0/1 voxel dump, or the lines are not
+    ordered z*n + y. Check with whoever produced the file.
+
+
+RELATED FILES
+-------------
+    tools\DAT to TIF converter.bat   double-click launcher
+    tools\dat_converter_gui.py       the drag-and-drop window
+    tools\dat_to_tif.py              the conversion logic + command line
+    tools\requirements-tools.txt     the few packages needed, for another PC
+    doc\dat_converter_gui_notes.md   developer notes for the window
+    doc\dat_to_tif_notes.md          developer notes for the converter
+
+The tools folder is self-contained: these files do not import anything from
+the rest of the project, so the folder can be copied on its own.

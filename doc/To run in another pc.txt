@@ -45,6 +45,13 @@ What you MUST copy for Option B
     requirements.txt               dependency list
     PorousMediaAnalysis.spec       only if you want to rebuild the .exe
     doc\                           these notes (optional but recommended)
+    tools\                         optional: standalone .dat -> .tif converter
+                                   for reading ASCII 0/1 volumes. Self-contained
+                                   — it can be copied on its own to any PC that
+                                   has Python; it then needs only the small
+                                   tools\requirements-tools.txt (not the full
+                                   list above). See
+                                   tools\HOW TO USE - DAT to TIF converter.txt
 
 
 What you do NOT need to copy (regenerated per machine, or leftovers)
