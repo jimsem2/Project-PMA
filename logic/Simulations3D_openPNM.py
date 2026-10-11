@@ -421,7 +421,13 @@ def simulate_advection_diffusion(network=None, chosen_phase='water', axis="x", i
 
     # First solve Stokes flow on this same phase to establish the velocity field
     # (advection-diffusion needs throat.velocity / pore.pressure).
-    if "pore.pressure" not in phase.keys():
+    # NOTE — test for a *solved* field, not for the key: every OpenPNM phase is
+    # created with a uniform default pore.pressure = 101325 Pa, so a plain
+    # `"pore.pressure" not in phase.keys()` is never true. With that test the
+    # pre-solve was skipped, the field stayed uniform, every throat flow was
+    # zero, and the advection-diffusion result silently collapsed onto the pure
+    # Fickian one.
+    if np.ptp(phase["pore.pressure"]) == 0:
         print("Running Stokes flow first to establish velocity field...")
         sf = op.algorithms.StokesFlow(network=network, phase=phase)
         sf.set_value_BC(pores=network.pores(inlet_label), values=inlet_pressure)
@@ -470,10 +476,30 @@ def simulate_advection_diffusion(network=None, chosen_phase='water', axis="x", i
     print(f"Combined advection-diffusion rate ({axis}-axis): {combined_rate[0]:.5e} m³/s  "
           f"(negative = flux exiting domain, magnitude = {J_ad:.5e} m³/s)")
 
-    # Peclet number: Pe = v * L / D  (dimensionless)
-    # Use the true image length when known (consistent with the image-based
-    # normalisation of K / D_eff above); fall back to the pore-centroid gap,
-    # then to OpenPNM's geometric length, if the image size is unavailable.
+    # ---- Peclet number ---------------------------------------------------
+    # Pe = v L / D is a *local* quantity: the length that matters is the one
+    # over which advection competes with diffusion, i.e. the throat length, not
+    # the sample length. Taken per throat it is exactly the ratio the upwinding
+    # scheme itself uses, Pe_ij = Q_ij / g_d,ij, because the diffusive
+    # conductance already carries the throat geometry (g_d = D A / L_throat, so
+    # Q/g_d = v L_throat / D). The reported value is the average over throats.
+    #
+    # A domain-scale Pe (same velocity, but with the whole sample as L) is also
+    # printed for context; it is larger by roughly L_sample / L_throat and says
+    # nothing about whether advection alters the pore-scale solve.
+    P_ad = phase["pore.pressure"]
+    cn_pe = network["throat.conns"]
+    gh_pe = phase["throat.hydraulic_conductance"]
+    gd_pe = phase["throat.diffusive_conductance"]
+    if np.ndim(gd_pe) > 1:
+        gd_pe = np.mean(gd_pe, axis=1)
+    Qij_pe = np.abs(gh_pe * (P_ad[cn_pe[:, 0]] - P_ad[cn_pe[:, 1]]))
+    Pe_throats = Qij_pe / gd_pe
+    Pe = float(np.mean(Pe_throats))
+    print(f"Mean throat Peclet number: {Pe:.5f}  "
+          f"(median {np.median(Pe_throats):.5f}, max {Pe_throats.max():.5f}; "
+          f"Pe > 1 means advection dominates within a throat)")
+
     D_bulk = phase["pore.diffusivity"].mean()
     _A_img, L = image_domain_dimensions(coord_idx)
     if L is None:
@@ -483,9 +509,12 @@ def simulate_advection_diffusion(network=None, chosen_phase='water', axis="x", i
             L = abs(_c_ad[outlet_pores, _ax_ad].mean() - _c_ad[inlet_pores, _ax_ad].mean())
         except Exception:
             L = op.topotools.get_domain_length(pn, inlets=inlet_pores, outlets=outlet_pores)
-    v_mean = phase["throat.velocity"].mean() if "throat.velocity" in phase.keys() else 1e-5
-    Pe = v_mean * L / D_bulk
-    print(f"Mean Peclet number: {Pe:.5f}  (dimensionless — Pe > 1 means advection dominates)")
+    if "throat.velocity" not in phase.keys():
+        raise RuntimeError("throat.velocity missing — the Stokes pre-solve did not run")
+    v_mean = phase["throat.velocity"].mean()
+    Pe_domain = v_mean * L / D_bulk
+    print(f"  domain-scale Peclet (v_mean * sample length / D): {Pe_domain:.5f}  "
+          f"(mean throat velocity {v_mean:.5e} m/s over L = {L:.5e} m)")
 
     # Save to VTK for ParaView (skipped when the caller exports the whole project once).
     if save_vtk:
